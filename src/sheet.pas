@@ -20,10 +20,11 @@ unit sheet;
 
 interface
 
-uses SysUtils, Generics.Collections;
+uses SysUtils, Generics.Collections, formula;
 
 const
   LabelPrefixes = ['''', '"', '^', '\'];
+  ValueStarts   = ['0'..'9', '+', '-', '.', '@', '(', '#', '$'];
   MaxCol = 256;
   MaxRow = 8192;
 
@@ -39,20 +40,31 @@ type
     UseGlobal: Boolean;     { True: follow the worksheet's global format }
   end;
 
+  TRecalcOrder = (roNatural, roColumnwise, roRowwise);
+
   TCell = class
   public
-    Raw: string;      { as typed, including label prefix ' " ^ \ }
-    Cache: string;    { computed value text (formulas); '' when none }
+    Raw: string;         { as typed (formulas in canonical form), including label prefix ' " ^ \ }
     Fmt: TCellFormat;
+    Formula: TFormula;   { compiled Raw when it is a formula, else nil }
+    Val: TValue;         { last computed value of a formula }
+    Row, Col: Integer;
+    Pass: Integer;       { recalculation bookkeeping }
+    Visiting: Boolean;
     constructor Create;
+    destructor Destroy; override;
+    { Sets Raw and, if it is a formula, compiles it. }
+    procedure SetRaw(const s: string);
   end;
+
+  TCellVisitor = procedure(cell: TCell; data: Pointer);
 
   TCellMap = specialize TDictionary<Int64, TCell>;
 
   { What a cell looked like at some moment (Exists = False: it was empty). }
   TCellState = record
     Exists: Boolean;
-    Raw, Cache: string;
+    Raw: string;
     Fmt: TCellFormat;
   end;
   TCellStateMap = specialize TDictionary<Int64, TCellState>;
@@ -63,6 +75,9 @@ type
     Fmt: TCellFormat;
     LabelPrefix: Char;
     ZeroDisplay: Boolean;
+    RecalcOrder: TRecalcOrder;
+    RecalcManual: Boolean;
+    Iterations: Integer;
   end;
 
   { The "before" picture of everything one command changed: only the cells and
@@ -93,6 +108,10 @@ type
     GlobalFmt: TCellFormat;
     GlobalLabelPrefix: Char;
     ZeroDisplay: Boolean;         { False: zero values are shown blank }
+    RecalcOrder: TRecalcOrder;
+    RecalcManual: Boolean;        { True: recalculate only on F9 }
+    Iterations: Integer;          { recalculation passes, 1..50 }
+    Changed: Boolean;             { cell contents changed since the owner last looked }
     { While set, every change is recorded here first (see TChangeSet).  The
       owner starts a group before a command and clears the property after. }
     Journal: TChangeSet;
@@ -111,6 +130,7 @@ type
     procedure SetCellFormat(r, c: Integer; const fmt: TCellFormat; makeIt: Boolean);
     function NonEmpty(r, c: Integer): Boolean;    { has contents, not just a format }
     procedure UsedExtent(out maxR, maxC: Integer);
+    procedure EachCell(visit: TCellVisitor; data: Pointer);
     function ColWidth(c: Integer): Integer;
     function ColWidthIsSet(c: Integer): Boolean;
     function ColWidthSetting(c: Integer): Integer;   { 0 = following the global width }
@@ -156,6 +176,29 @@ begin
   inherited Create;
   Fmt := MakeFormat(fkGeneral, 0);
   Fmt.UseGlobal := True;
+  Val := NumValue(0);
+end;
+
+destructor TCell.Destroy;
+begin
+  Formula.Free;
+  inherited Destroy;
+end;
+
+procedure TCell.SetRaw(const s: string);
+var
+  f: TFormula;
+  d: Double;
+  pos: Integer;
+begin
+  Raw := s;
+  FreeAndNil(Formula);
+  if (s = '') or not (s[1] in ValueStarts) or IsNumberLiteral(s, d) then exit;
+  if CompileFormula(s, f, pos) then
+  begin
+    Formula := f;
+    Raw := f.Text;
+  end;
 end;
 
 function InBounds(r, c: Integer): Boolean;
@@ -199,6 +242,7 @@ begin
   GlobalFmt := MakeFormat(fkGeneral, 0);
   GlobalLabelPrefix := '''';
   ZeroDisplay := True;
+  Iterations := 1;
 end;
 
 destructor TSheet.Destroy;
@@ -230,10 +274,12 @@ begin
   if Result = nil then
   begin
     Result := TCell.Create;
+    Result.Row := r;
+    Result.Col := c;
     FCells.Add(Key(r, c), Result);
   end;
-  Result.Raw := raw;
-  Result.Cache := '';
+  Result.SetRaw(raw);
+  Changed := True;
 end;
 
 procedure TSheet.Remove(r, c: Integer);
@@ -246,6 +292,7 @@ begin
     Touch(r, c);
     FCells.Remove(Key(r, c));
     cell.Free;
+    Changed := True;
   end;
 end;
 
@@ -264,6 +311,7 @@ begin
   end;
   for cell in FCells.Values do cell.Free;
   FCells.Clear;
+  Changed := True;
   FillChar(FColWd, SizeOf(FColWd), 0);
 end;
 
@@ -293,6 +341,9 @@ begin
   Result.Fmt := GlobalFmt;
   Result.LabelPrefix := GlobalLabelPrefix;
   Result.ZeroDisplay := ZeroDisplay;
+  Result.RecalcOrder := RecalcOrder;
+  Result.RecalcManual := RecalcManual;
+  Result.Iterations := Iterations;
 end;
 
 function TSheet.StateOf(key: Int64): TCellState;
@@ -301,12 +352,10 @@ var
 begin
   FillChar(Result, SizeOf(Result), 0);
   Result.Raw := '';
-  Result.Cache := '';
   if FCells.TryGetValue(key, cell) then
   begin
     Result.Exists := True;
     Result.Raw := cell.Raw;
-    Result.Cache := cell.Cache;
     Result.Fmt := cell.Fmt;
   end;
 end;
@@ -322,16 +371,19 @@ begin
       FCells.Remove(key);
       cell.Free;
     end;
+    Changed := True;
     exit;
   end;
   if not FCells.TryGetValue(key, cell) then
   begin
     cell := TCell.Create;
+    cell.Row := Integer(key shr 16);
+    cell.Col := Integer(key and $FFFF);
     FCells.Add(key, cell);
   end;
-  cell.Raw := st.Raw;
-  cell.Cache := st.Cache;
+  cell.SetRaw(st.Raw);
   cell.Fmt := st.Fmt;
+  Changed := True;
 end;
 
 procedure TSheet.Touch(r, c: Integer);
@@ -372,6 +424,10 @@ begin
   GlobalFmt := cs.Globals.Fmt;
   GlobalLabelPrefix := cs.Globals.LabelPrefix;
   ZeroDisplay := cs.Globals.ZeroDisplay;
+  RecalcOrder := cs.Globals.RecalcOrder;
+  RecalcManual := cs.Globals.RecalcManual;
+  Iterations := cs.Globals.Iterations;
+  Changed := True;
 end;
 
 procedure TSheet.SetCellFormat(r, c: Integer; const fmt: TCellFormat; makeIt: Boolean);
@@ -395,6 +451,13 @@ var
 begin
   cell := Find(r, c);
   Result := (cell <> nil) and (cell.Raw <> '');
+end;
+
+procedure TSheet.EachCell(visit: TCellVisitor; data: Pointer);
+var
+  cell: TCell;
+begin
+  for cell in FCells.Values do visit(cell, data);
 end;
 
 procedure TSheet.UsedExtent(out maxR, maxC: Integer);

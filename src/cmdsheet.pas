@@ -205,6 +205,28 @@ begin
   S.AskRange('Enter range to erase:', @EraseRangeDone, path);
 end;
 
+procedure IterationDone(S: TSession; const path: string);
+begin
+  S.SaveUndo;
+  S.Sheet.Iterations := S.PromptNum;
+end;
+
+procedure CmdRecalc(S: TSession; const path: string);
+begin
+  if path.EndsWith('Iteration') then
+  begin
+    S.AskNumber('Enter iteration count (1..50):', S.Sheet.Iterations, 1, 50, @IterationDone, path);
+    exit;
+  end;
+  S.SaveUndo;
+  if path.EndsWith('Natural') then S.Sheet.RecalcOrder := roNatural
+  else if path.EndsWith('Columnwise') then S.Sheet.RecalcOrder := roColumnwise
+  else if path.EndsWith('Rowwise') then S.Sheet.RecalcOrder := roRowwise
+  else if path.EndsWith('Automatic') then S.Sheet.RecalcManual := False
+  else if path.EndsWith('Manual') then S.Sheet.RecalcManual := True;
+  S.Sheet.Changed := True;          { order or mode changed: recalculate or flag CALC }
+end;
+
 procedure CmdNothing(S: TSession; const path: string);
 begin
 end;
@@ -222,6 +244,8 @@ const
     ('Fixed', 'Sci', 'Currency', ',', 'General', '+/-', 'Percent', 'Text', 'Hidden');
   Prefixes: array[0..1] of string = ('Worksheet Global Format ', 'Range Format ');
   Aligns: array[0..2] of string = ('Left', 'Right', 'Center');
+  RecalcItems: array[0..5] of string =
+    ('Natural', 'Columnwise', 'Rowwise', 'Automatic', 'Manual', 'Iteration');
 var
   p, k, n: Integer;
 begin
@@ -243,6 +267,8 @@ begin
   C.Register('Worksheet Global Column-Width', @CmdGlobalWidth);
   C.Register('Worksheet Column Set-Width', @CmdSetWidth);
   C.Register('Worksheet Column Reset-Width', @CmdResetWidth);
+  for k := Low(RecalcItems) to High(RecalcItems) do
+    C.Register('Worksheet Global Recalculation ' + RecalcItems[k], @CmdRecalc);
   C.Register('Worksheet Global Zero No', @CmdZero);
   C.Register('Worksheet Global Zero Yes', @CmdZero);
   C.Register('Range Erase', @CmdRangeErase);

@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, keys, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
+uses SysUtils, keys, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
 
 var
   Fails, Total: Integer;
@@ -150,7 +150,7 @@ var
 begin
   sh := TSheet.Create;
   c := TCell.Create;
-  c.Raw := '3.50';
+  c.SetRaw('3.50');
   CheckStr(ValueText(c, sh, 9), '3.5', 'general trims zeros');
   c.Raw := '0.1234567891234';
   CheckStr(ValueText(c, sh, 9), '0.1234568', 'general fits the column width');
@@ -164,10 +164,10 @@ begin
   CheckStr(ValueText(c, sh, 20), '$1,234,567.89', 'currency commas');
   c.Raw := '-5';
   CheckStr(ValueText(c, sh, 20), '($5.00)', 'currency negative');
-  c.Raw := '@SUM(A1:A3)';
-  c.Cache := '10.99';
-  CheckStr(ValueText(c, sh, 20), '$10.99', 'cached formula value');
-  c.Cache := '';
+  c.SetRaw('@SUM(A1..A3)');
+  c.Val := NumValue(10.99);
+  CheckStr(ValueText(c, sh, 20), '$10.99', 'formula value is formatted');
+  c.SetRaw('1');
 
   c.Raw := '1234.5';
   c.Fmt := MakeFormat(fkFixed, 0);
@@ -218,12 +218,218 @@ begin
   CheckStr(FormatTag(MakeFormat(fkComma, 0)), ',0', 'comma tag');
   CheckStr(FormatTag(MakeFormat(fkDate, 7)), 'D7', 'time tag');
 
-  c.Raw := '$12';
+  c.SetRaw('$12');
   sh.ZeroDisplay := True;
-  CheckStr(ValueText(c, sh, 9), '$12', 'hex-looking text is not a number');
+  CheckStr(ValueText(c, sh, 9), 'ERR', 'text that is not a number or formula shows ERR');
   CheckStr(NumToRaw(3.26), '3.26', 'number stored shortest');
   c.Free;
   sh.Free;
+end;
+
+{ ---- formulas ---- }
+function Shown(S: TSession; r, c: Integer): string;
+var
+  cell: TCell;
+begin
+  cell := S.Sheet.Find(r, c);
+  if cell = nil then exit('(empty)');
+  Result := ValueText(cell, S.Sheet, 30);
+end;
+
+{ puts f in A1 of a fresh sheet and returns what A1 displays }
+function EvalA1(const f: string): string;
+var
+  X: TSession;
+begin
+  X := TSession.Create;
+  try
+    X.Sheet.Put(1, 1, f);
+    X.Calc.Recalc;
+    Result := Shown(X, 1, 1);
+  finally
+    X.Free;
+  end;
+end;
+
+procedure CheckCompile(const src, canon: string);
+var
+  f: TFormula;
+  pos: Integer;
+begin
+  Inc(Total);
+  if not CompileFormula(src, f, pos) then
+  begin
+    Inc(Fails);
+    WriteLn('FAIL: compile ', src, ' failed at ', pos);
+    exit;
+  end;
+  if f.Text <> canon then
+  begin
+    Inc(Fails);
+    WriteLn('FAIL: canonical form of ', src, ': got ', f.Text, ' want ', canon);
+  end;
+  f.Free;
+end;
+
+procedure CheckBad(const src: string; wantPos: Integer);
+var
+  f: TFormula;
+  pos: Integer;
+begin
+  Inc(Total);
+  if CompileFormula(src, f, pos) then
+  begin
+    Inc(Fails);
+    WriteLn('FAIL: should not compile: ', src);
+    f.Free;
+  end
+  else if (wantPos > 0) and (pos <> wantPos) then
+  begin
+    Inc(Fails);
+    WriteLn('FAIL: error position of ', src, ': got ', pos, ' want ', wantPos);
+  end;
+end;
+
+procedure TestFormulas;
+var
+  X: TSession;
+  i: Integer;
+begin
+  CheckCompile('+a1 + b2', '+A1+B2');
+  CheckCompile('@sum( a1 , 5 )', '@SUM(A1,5)');
+  CheckCompile('@sum(a3.a1)', '@SUM(A1..A3)');
+  CheckCompile('@SUM(B2..A1)', '@SUM(A1..B2)');
+  CheckCompile('$a$1+B$2+$C3', '$A$1+B$2+$C3');
+  CheckCompile('(1+2)*3', '(1+2)*3');
+  CheckCompile('+"hi"&A1', '+"hi"&A1');
+  CheckCompile('1#and#2<3', '1#AND#2<3');
+  CheckCompile('#not#A1', '#NOT#A1');
+  CheckCompile('@pi', '@PI');
+  CheckCompile('2^-1', '2^-1');
+  CheckCompile('.5+1E2', '0.5+100');
+  CheckBad('1+', 3);
+  CheckBad('@FOO(1)', 1);
+  CheckBad('12abc', 3);
+  CheckBad('+A1B', 0);
+  CheckBad('@SUM()', 1);
+  CheckBad('(1+2', 5);
+  CheckBad('+"abc', 0);
+  CheckBad('+IV8193', 0);
+  CheckBad('+IW1', 0);
+  CheckBad('abc', 1);
+  CheckBad('1 2', 3);
+
+  { arithmetic and precedence }
+  CheckStr(EvalA1('+1+2*3'), '7', 'precedence');
+  CheckStr(EvalA1('(1+2)*3'), '9', 'parentheses');
+  CheckStr(EvalA1('2^3^2'), '64', 'exponent is left to right');
+  CheckStr(EvalA1('-2^2'), '-4', 'exponent binds tighter than unary minus (assumed)');
+  CheckStr(EvalA1('2^-1'), '0.5', 'negative exponent');
+  CheckStr(EvalA1('10/4'), '2.5', 'division');
+  CheckStr(EvalA1('1/0'), 'ERR', 'division by zero');
+  CheckStr(EvalA1('0^0'), 'ERR', 'zero to the zero');
+  CheckStr(EvalA1('(-8)^0.5'), 'ERR', 'fractional power of a negative');
+  CheckStr(EvalA1('10-4-3'), '3', 'subtraction is left to right');
+  CheckStr(EvalA1('+3>2'), '1', 'comparison true');
+  CheckStr(EvalA1('+2>3'), '0', 'comparison false');
+  CheckStr(EvalA1('1<2#AND#2<3'), '1', 'and');
+  CheckStr(EvalA1('0#OR#0'), '0', 'or');
+  CheckStr(EvalA1('#NOT#0'), '1', 'not');
+  CheckStr(EvalA1('1+2>2'), '1', 'arithmetic before comparison');
+  CheckStr(EvalA1('+"a"&"b"'), 'ab', 'string concatenation');
+  CheckStr(EvalA1('+"a"+1'), 'ERR', 'string literal in arithmetic is an error');
+  CheckStr(EvalA1('+"abc"="ABC"'), '1', 'text comparison ignores case (assumed)');
+  CheckStr(EvalA1('@NA'), 'NA', 'NA');
+  CheckStr(EvalA1('@NA+1'), 'NA', 'NA propagates');
+  CheckStr(EvalA1('@ERR+@NA'), 'ERR', 'ERR beats NA');
+  CheckStr(EvalA1('@PI*2'), '6.283185307', 'pi');
+  CheckStr(EvalA1('@SUM(1,2,3)'), '6', 'sum of numbers');
+  CheckStr(EvalA1('+A1..A2'), 'ERR', 'range outside a function');
+
+  { references, labels, empty cells }
+  X := TSession.Create;
+  X.Sheet.Put(1, 2, '4');
+  X.Sheet.Put(2, 2, '6');
+  X.Sheet.Put(3, 2, '''text');
+  X.Sheet.Put(4, 2, '"right');
+  X.Sheet.Put(1, 1, '@SUM(B1..B4)');
+  X.Sheet.Put(2, 1, '+B1*B2');
+  X.Sheet.Put(3, 1, '+B3+1');
+  X.Sheet.Put(4, 1, '+C9+1');
+  X.Sheet.Put(5, 1, '+B3&"!"');
+  X.Sheet.Put(6, 1, '+B1&"!"');
+  X.Sheet.Put(7, 1, '+C9&"x"');
+  X.Sheet.Put(8, 1, '@SUM(B1..B2,10)');
+  X.Sheet.Put(9, 1, '@SUM(B1..IV8192)');
+  X.Calc.Recalc;
+  CheckStr(Shown(X, 1, 1), '10', 'sum ignores labels');
+  CheckStr(Shown(X, 2, 1), '24', 'cell references');
+  CheckStr(Shown(X, 3, 1), '1', 'label counts as zero in arithmetic');
+  CheckStr(Shown(X, 4, 1), '1', 'empty cell counts as zero');
+  CheckStr(Shown(X, 5, 1), 'text!', 'label in string formula');
+  CheckStr(Shown(X, 6, 1), 'ERR', 'number in string formula is an error');
+  CheckStr(Shown(X, 7, 1), 'x', 'empty cell is empty text in string formula');
+  CheckStr(Shown(X, 8, 1), '20', 'mixed range and number arguments');
+  CheckStr(Shown(X, 9, 1), '10', 'huge range is walked sparsely');
+  Check(not X.Calc.Circular, 'no circular reference');
+  { a formula that produced text is displayed as text }
+  CheckStr(Shown(X, 5, 1), 'text!', 'text result');
+  { changing a precedent updates dependents }
+  X.Sheet.Put(1, 2, '10');
+  X.Calc.Recalc;
+  CheckStr(Shown(X, 1, 1), '16', 'dependents follow their precedents');
+  X.Free;
+
+  { recalculation order: natural handles forward references }
+  X := TSession.Create;
+  X.Sheet.Put(1, 1, '+B1');
+  X.Sheet.Put(1, 2, '+C1');
+  X.Sheet.Put(1, 3, '5');
+  X.Calc.Recalc;
+  CheckStr(Shown(X, 1, 1), '5', 'natural order resolves forward references');
+  X.Sheet.RecalcOrder := roColumnwise;
+  X.Sheet.Put(1, 3, '7');
+  X.Calc.Recalc;
+  CheckStr(Shown(X, 1, 1), '5', 'columnwise one pass uses stale values');
+  X.Sheet.Iterations := 3;
+  X.Calc.Recalc;
+  CheckStr(Shown(X, 1, 1), '7', 'more iterations settle it');
+  X.Free;
+
+  { circular references }
+  X := TSession.Create;
+  X.Sheet.Put(1, 1, '+B1');
+  X.Sheet.Put(1, 2, '+A1');
+  X.Calc.Recalc;
+  Check(X.Calc.Circular, 'circular reference detected');
+  X.Sheet.Put(1, 2, '3');
+  X.Calc.Recalc;
+  Check(not X.Calc.Circular, 'circular flag clears when fixed');
+  CheckStr(Shown(X, 1, 1), '3', 'value after the cycle is broken');
+  X.Sheet.Put(2, 1, '+A2+1');
+  X.Calc.Recalc;
+  Check(X.Calc.Circular, 'self reference is circular');
+  X.Free;
+
+  { manual recalculation }
+  X := TSession.Create;
+  X.Sheet.RecalcManual := True;
+  X.Sheet.Put(1, 1, '1+1');
+  X.Calc.SheetChanged;
+  Check(X.Calc.NeedsCalc, 'manual mode flags CALC');
+  CheckStr(Shown(X, 1, 1), '0', 'not recalculated yet');
+  X.Calc.Recalc;
+  Check(not X.Calc.NeedsCalc, 'recalc clears CALC');
+  CheckStr(Shown(X, 1, 1), '2', 'recalculated on demand');
+  X.Free;
+
+  { a long chain: natural order recurses, still fine }
+  X := TSession.Create;
+  X.Sheet.Put(1, 1, '1');
+  for i := 2 to 5000 do X.Sheet.Put(i, 1, '+A' + IntToStr(i - 1) + '+1');
+  X.Calc.Recalc;
+  CheckStr(Shown(X, 5000, 1), '5000', 'chain of 5000 dependent formulas');
+  X.Free;
 end;
 
 { ---- dates (serial numbers, including the 1900 leap-year quirk) ---- }
@@ -321,9 +527,9 @@ begin
   { menus and stubs }
   Feed('/');
   Check(S.Mode = mMenu, 'slash opens menu');
-  Feed('wgrn');
+  Feed('wgpe');
   Check(S.Mode = mReady, 'leaf returns to ready');
-  CheckStr(S.Msg, '[stub] /Worksheet Global Recalculation Natural', 'stub message');
+  CheckStr(S.Msg, '[stub] /Worksheet Global Protection Enable', 'stub message');
 
   Feed('/');
   Ctl.HandleKey(kRight);
@@ -550,6 +756,73 @@ begin
   Ctl.HandleKey(kEsc);
   Check(S.Mode = mReady, 'esc cancels range prompt');
 
+
+  { ---- phase 4: formulas through the keyboard ---- }
+  NewSession;
+  Ctl := TController.Create(S, Cmds);
+  Feed('5'#13);
+  Ctl.HandleKey(kDown);
+  Feed('+a1*2'#13);
+  CheckStr(S.Sheet.Find(2, 1).Raw, '+A1*2', 'formula stored in canonical form');
+  CheckStr(ValueText(S.Sheet.Find(2, 1), S.Sheet, 9), '10', 'formula calculated on entry');
+  Ctl.HandleKey(kUp);
+  Feed('7'#13);
+  CheckStr(ValueText(S.Sheet.Find(2, 1), S.Sheet, 9), '14', 'dependents recalculated automatically');
+  Ctl.HandleKey(kAltF1 + 3);
+  CheckStr(ValueText(S.Sheet.Find(2, 1), S.Sheet, 9), '10', 'undo recalculates');
+  Ctl.HandleKey(kDown);
+  Ctl.HandleKey(kDown);
+  Feed('1+'#13);
+  Check(S.Mode = mEdit, 'invalid formula opens EDIT mode');
+  CheckInt(S.EditPos, 2, 'cursor at the problem');
+  CheckStr(S.Entry, '1+', 'entry kept for correction');
+  Feed('1'#13);
+  Check(S.Mode = mReady, 'corrected formula accepted');
+  Check(S.Sheet.Find(3, 1) <> nil, 'corrected formula stored');
+  CheckStr(Shown(S, 3, 1), '2', 'corrected formula value');
+  Feed('12abc'#13);
+  Check(S.Mode = mEdit, 'number followed by text is refused');
+  Ctl.HandleKey(kEsc);
+  Check(S.Sheet.Find(4, 1) = nil, 'refused entry stores nothing');
+  Ctl.HandleKey(kDown);
+  Feed('+a1'#13);
+
+  { recalculation settings from the menu }
+  Feed('/wgrm');
+  Check(S.Sheet.RecalcManual, 'manual recalculation');
+  S.CurRow := 1;
+  Feed('9'#13);
+  Check(S.Calc.NeedsCalc, 'CALC pending in manual mode');
+  CheckStr(ValueText(S.Sheet.Find(2, 1), S.Sheet, 9), '10', 'not recalculated yet');
+  Ctl.HandleKey(kF1 + 8);
+  CheckStr(ValueText(S.Sheet.Find(2, 1), S.Sheet, 9), '18', 'F9 recalculates');
+  Check(not S.Calc.NeedsCalc, 'F9 clears CALC');
+  Feed('/wgra');
+  Check(not S.Sheet.RecalcManual, 'automatic recalculation');
+  Feed('/wgrr');
+  Check(S.Sheet.RecalcOrder = roRowwise, 'rowwise');
+  Feed('/wgrc');
+  Check(S.Sheet.RecalcOrder = roColumnwise, 'columnwise');
+  Feed('/wgrn');
+  Check(S.Sheet.RecalcOrder = roNatural, 'natural');
+  Feed('/wgri');
+  Check(S.Mode = mPrompt, 'iteration prompt');
+  Feed(#8'5'#13);
+  CheckInt(S.Sheet.Iterations, 5, 'iteration count');
+  Feed('/wgri');
+  Feed(#8'99'#13);
+  Check(S.Mode = mPrompt, 'iteration count above 50 refused');
+  Ctl.HandleKey(kEsc);
+  Ctl.HandleKey(kAltF1 + 3);
+  CheckInt(S.Sheet.Iterations, 1, 'undo restores the iteration count');
+
+  { a circular reference is flagged }
+  S.CurRow := 10;
+  Feed('+b10'#13);
+  Ctl.HandleKey(kRight);
+  Feed('+a10'#13);
+  Check(S.Calc.Circular, 'circular reference flagged after entry');
+
   S.Free;
   Cmds.Free;
 end;
@@ -559,6 +832,7 @@ begin
   TestJournal;
   TestFormat;
   TestDates;
+  TestFormulas;
   TestMenus;
   TestKeys;
   TestController;

@@ -33,13 +33,12 @@ procedure LoadDemo(S: TSession);
   begin
     S.Sheet.Put(r, c, txt);
   end;
-  procedure V(r, c: Integer; const txt, cache: string);
+  procedure V(r, c: Integer; const txt: string);
   var
     cell: TCell;
   begin
     cell := S.Sheet.Put(r, c, txt);
     cell.Fmt := MakeFormat(fkCurrency, 2);
-    cell.Cache := cache;
   end;
 begin
   S.Sheet.SetColWidth(10, 1);
@@ -53,18 +52,19 @@ begin
   L(3, 11, '\=');
   L(3, 12, '\=');
   L(3, 14, '\=');
-  L(4, 11, '''Materials');         V(4, 12, '3.26', '');
-  L(5, 11, '''Contract Labor');    V(5, 12, '3.75', '');
-  L(6, 11, '''Energy');            V(6, 12, '1.45', '');
-  L(7, 11, '''Sales Commissions'); V(7, 12, '2.21', '');
-  L(8, 11, '''Freight');           V(8, 12, '0.32', '');
+  L(4, 11, '''Materials');         V(4, 12, '3.26');
+  L(5, 11, '''Contract Labor');    V(5, 12, '3.75');
+  L(6, 11, '''Energy');            V(6, 12, '1.45');
+  L(7, 11, '''Sales Commissions'); V(7, 12, '2.21');
+  L(8, 11, '''Freight');           V(8, 12, '0.32');
   L(9, 12, '\-');
-  L(10, 11, '''Total');            V(10, 12, '@SUM(L4:L8)', '10.99');
+  L(10, 11, '''Total');            V(10, 12, '@SUM(L4..L8)');
   L(4, 14, '''Plant Operation');
   L(5, 14, '''Salaries');
   L(6, 14, '''Administration');
   L(7, 14, '''Sales & Marketing');
   L(8, 14, '''Research & Development');
+  S.Calc.Recalc;
   S.CurCol := 11;
   S.CurRow := 4;
   S.LeftCol := 10;

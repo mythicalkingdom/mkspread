@@ -40,7 +40,7 @@ type
     procedure PromptKey(k: Integer);
     procedure PointKey(k: Integer);
     procedure MenuKey(k: Integer);
-    procedure CommitText(const text: string);
+    function CommitText(const text: string): Boolean;
     procedure StartEdit;
     procedure SelectItem(i: Integer);
     procedure StubKey(const name: string);
@@ -56,7 +56,7 @@ function ParseRangeText(const s: string; out r: TRange): Boolean;
 
 implementation
 
-uses keys, sheet, cellfmt, menutree, u8edit, SysUtils;
+uses keys, sheet, cellfmt, formula, menutree, u8edit, SysUtils;
 
 function ParseRangeText(const s: string; out r: TRange): Boolean;
 var
@@ -250,7 +250,7 @@ begin
     kF1 + 5: StubKey('F6 (WINDOW)');
     kF1 + 6: StubKey('F7 (QUERY)');
     kF1 + 7: StubKey('F8 (TABLE)');
-    kF1 + 8: StubKey('F9 (CALC)');
+    kF1 + 8: FS.Calc.Recalc;
     kF1 + 9: StubKey('F10 (GRAPH)');
     kAltF1 + 3: FS.DoUndo;
     kBreak, kEsc, kBackspace: ;
@@ -270,14 +270,18 @@ end;
 { ---------------------------------------------------------------- entry / edit }
 
 { Store text typed into the current cell.  First character decides: a label
-  prefix keeps it a label, a number-ish start makes it a value, anything else
-  is a label with the worksheet's default prefix. }
-procedure TController.CommitText(const text: string);
+  prefix keeps it a label, a number-ish start makes it a number or formula,
+  anything else is a label with the worksheet's default prefix.  A formula
+  that does not parse puts the text into EDIT mode with the cursor at the
+  problem and returns False (nothing is stored). }
+function TController.CommitText(const text: string): Boolean;
 var
   raw: string;
   d: Double;
-  code: Integer;
+  f: TFormula;
+  errPos: Integer;
 begin
+  Result := True;
   FS.Mode := mReady;
   if text = '' then exit;
   raw := text;
@@ -285,8 +289,21 @@ begin
     { label as typed }
   else if raw[1] in ValueStarts then
   begin
-    Val(raw, d, code);
-    if (code = 0) and not (raw[1] in ['$', '#']) then raw := NumToRaw(d);
+    if IsNumberLiteral(raw, d) then
+      raw := NumToRaw(d)
+    else if CompileFormula(raw, f, errPos) then
+    begin
+      raw := f.Text;
+      f.Free;
+    end
+    else
+    begin
+      FS.Entry := text;
+      FS.EditPos := U8Len(Copy(text, 1, errPos - 1));
+      FS.Mode := mEdit;
+      FS.Msg := 'Invalid formula';
+      exit(False);
+    end;
   end
   else
     raw := FS.Sheet.GlobalLabelPrefix + raw;
@@ -319,15 +336,12 @@ begin
         FS.EditPos := U8Len(shown);
         FS.Mode := mEdit;
       end;
-    kUp:    begin CommitText(FS.Entry); MoveCur(-1, 0); end;
-    kDown:  begin CommitText(FS.Entry); MoveCur(1, 0); end;
-    kLeft:  begin CommitText(FS.Entry); MoveCur(0, -1); end;
-    kRight: begin CommitText(FS.Entry); MoveCur(0, 1); end;
+    kUp:    if CommitText(FS.Entry) then MoveCur(-1, 0);
+    kDown:  if CommitText(FS.Entry) then MoveCur(1, 0);
+    kLeft:  if CommitText(FS.Entry) then MoveCur(0, -1);
+    kRight: if CommitText(FS.Entry) then MoveCur(0, 1);
     kPgUp, kPgDn, kHome, kTab, kShiftTab, kCtrlLeft, kCtrlRight:
-      begin
-        CommitText(FS.Entry);
-        NavKey(k);
-      end;
+      if CommitText(FS.Entry) then NavKey(k);
     32..126, 128..kSpecialBase - 1:
       if Length(FS.Entry) < 240 then FS.Entry := FS.Entry + UTF8Encode(WideChar(k));
   end;
@@ -353,8 +367,8 @@ begin
         Dec(FS.EditPos);
       end;
     kDel: U8DeleteAt(FS.Entry, FS.EditPos);
-    kUp:   begin CommitText(FS.Entry); MoveCur(-1, 0); end;
-    kDown: begin CommitText(FS.Entry); MoveCur(1, 0); end;
+    kUp:   if CommitText(FS.Entry) then MoveCur(-1, 0);
+    kDown: if CommitText(FS.Entry) then MoveCur(1, 0);
     32..126, 128..kSpecialBase - 1:
       if Length(FS.Entry) < 240 then
       begin

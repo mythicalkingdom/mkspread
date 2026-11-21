@@ -21,7 +21,7 @@ unit session;
 
 interface
 
-uses sheet, menutree;
+uses sheet, menutree, calc;
 
 type
   TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint);
@@ -41,6 +41,7 @@ type
   TSession = class
   public
     Sheet: TSheet;
+    Calc: TCalc;
     Menus: TMenuTree;
     CurCol, CurRow: Integer;
     LeftCol, TopRow: Integer;
@@ -114,6 +115,7 @@ constructor TSession.Create;
 begin
   inherited Create;
   Sheet := TSheet.Create;
+  Calc := TCalc.Create(Sheet);
   Menus := BuildMenuTree;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
   GridRows := 20;
@@ -125,6 +127,7 @@ destructor TSession.Destroy;
 begin
   Menus.Free;
   UndoSet.Free;
+  Calc.Free;
   Sheet.Free;
   inherited Destroy;
 end;
@@ -226,6 +229,7 @@ end;
 procedure TSession.EndChange;
 begin
   Sheet.Journal := nil;
+  Calc.SheetChanged;
 end;
 
 procedure TSession.DoUndo;

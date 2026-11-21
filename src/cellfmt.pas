@@ -22,13 +22,14 @@ interface
 
 uses sheet;
 
-const
-  ValueStarts   = ['0'..'9', '+', '-', '.', '@', '(', '#', '$'];
-
 function IsLabel(cell: TCell): Boolean;
 
-{ The numeric value of a cell, when it has one (a number, or a formula that
-  has a computed value). }
+{ Cells that show text: labels and formulas that produced text.  prefix is the
+  alignment character (' " ^ \) and text what is displayed. }
+function TextOf(cell: TCell; out prefix: Char; out text: string): Boolean;
+
+{ The numeric value of a cell, when it has one (a number, or a formula whose
+  result is a number). }
 function CellNumber(cell: TCell; out d: Double): Boolean;
 
 function EffectiveFormat(cell: TCell; sh: TSheet): TCellFormat;
@@ -42,12 +43,9 @@ function FormatNumber(d: Double; const f: TCellFormat; width: Integer): string;
   overflow check that turns too-wide text into asterisks). }
 function ValueText(cell: TCell; sh: TSheet; width: Integer): string;
 
-{ Number as stored: shortest text that reads back as the same value (15 digits). }
-function NumToRaw(d: Double): string;
-
 implementation
 
-uses SysUtils, Math, dates;
+uses SysUtils, Math, dates, formula;
 
 function IsLabel(cell: TCell): Boolean;
 begin
@@ -55,16 +53,33 @@ begin
 end;
 
 function CellNumber(cell: TCell; out d: Double): Boolean;
-var
-  s: string;
-  code: Integer;
 begin
   d := 0;
-  s := cell.Cache;
-  if s = '' then s := cell.Raw;
-  if (s = '') or (s[1] in LabelPrefixes) or (s[1] in ['$', '%', '&', 'x', 'X']) then exit(False);
-  Val(s, d, code);
-  Result := code = 0;
+  if cell.Formula <> nil then
+  begin
+    Result := cell.Val.Kind = vkNum;
+    if Result then d := cell.Val.Num;
+    exit;
+  end;
+  Result := IsNumberLiteral(cell.Raw, d);
+end;
+
+function TextOf(cell: TCell; out prefix: Char; out text: string): Boolean;
+begin
+  Result := True;
+  if cell.Formula <> nil then
+  begin
+    if cell.Val.Kind <> vkStr then exit(False);
+    prefix := '''';
+    text := cell.Val.Str;
+  end
+  else if (cell.Raw <> '') and (cell.Raw[1] in LabelPrefixes) then
+  begin
+    prefix := cell.Raw[1];
+    text := Copy(cell.Raw, 2, MaxInt);
+  end
+  else
+    Result := False;
 end;
 
 function EffectiveFormat(cell: TCell; sh: TSheet): TCellFormat;
@@ -86,15 +101,6 @@ begin
     fkText:     Result := 'T';
     fkHidden:   Result := 'H';
   end;
-end;
-
-function NumToRaw(d: Double): string;
-var
-  fs: TFormatSettings;
-begin
-  fs := DefaultFormatSettings;
-  fs.DecimalSeparator := '.';
-  Result := FloatToStrF(d, ffGeneral, 15, 0, fs);
 end;
 
 function Commas(const digits: string): string;
@@ -254,10 +260,17 @@ begin
   if CellNumber(cell, d) then
   begin
     if (d = 0) and not sh.ZeroDisplay then exit('');
-    Result := FormatNumber(d, f, width);
-  end
-  else if cell.Cache <> '' then
-    Result := cell.Cache
+    exit(FormatNumber(d, f, width));
+  end;
+  if cell.Formula <> nil then
+    case cell.Val.Kind of
+      vkStr: Result := cell.Val.Str;
+      vkNA: Result := 'NA';
+    else
+      Result := 'ERR';
+    end
+  else if (cell.Raw <> '') and (cell.Raw[1] in ValueStarts) then
+    Result := 'ERR'                  { text that is neither a number nor a valid formula }
   else
     Result := cell.Raw;
 end;

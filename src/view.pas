@@ -57,6 +57,7 @@ var
   cell: TCell;
   sel: TRange;
   pre: Char;
+  txt: string;
 
   procedure PutBuf(pos: Integer; const txt: UnicodeString);
   var
@@ -85,10 +86,9 @@ begin
     cell := S.Sheet.Find(r, c);
     if (cell <> nil) and (cell.Raw <> '') then
     begin
-      if IsLabel(cell) then
+      if TextOf(cell, pre, txt) then
       begin
-        pre := cell.Raw[1];
-        t := UTF8Decode(Copy(cell.Raw, 2, MaxInt));
+        t := UTF8Decode(txt);
         case pre of
           '''':
             begin
@@ -270,6 +270,8 @@ begin
   { bottom line: clock, message, indicators }
   TermPut(1, h, taNormal, UpperCase(FormatDateTime('dd-mmm-yy hh:nn AM/PM', Now)));
   if S.Msg <> '' then TermPut(23, h, taMsg, PadR(S.Msg, 55));
+  if S.Calc.NeedsCalc then TermPut(w - 20, h, taNormal, 'CALC');
+  if S.Calc.Circular then TermPut(w - 26, h, taNormal, 'CIRC');
   if S.HasUndo then TermPut(w - 14, h, taNormal, 'UNDO');
   if S.EndMode then TermPut(w - 5, h, taNormal, 'END');
 
