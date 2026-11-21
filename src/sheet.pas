@@ -121,6 +121,8 @@ type
     RecalcManual: Boolean;        { True: recalculate only on F9 }
     Iterations: Integer;          { recalculation passes, 1..50 }
     Changed: Boolean;             { cell contents changed since the owner last looked }
+    PointerRow, PointerCol: Integer;   { where the cell pointer is, for @CELLPOINTER }
+    FileName: string;             { for @CELL("filename") }
     { Frozen titles: rows R1..R2 / columns C1..C2 stay on screen; 0 = none. }
     TitleR1, TitleR2, TitleC1, TitleC2: Integer;
     { While set, every change is recorded here first (see TChangeSet).  The

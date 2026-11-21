@@ -60,6 +60,10 @@ type
     function CellValue(r, c: Integer): TValue; virtual; abstract;
     { resolves a range name; False when the name is not defined }
     function LookupName(const name: string; out r1, c1, r2, c2: Integer): Boolean; virtual; abstract;
+    { @CELL(attribute, cell) }
+    function CellInfo(const attr: string; r, c: Integer): TValue; virtual; abstract;
+    { where the cell pointer is, for @CELLPOINTER }
+    procedure PointerCell(out r, c: Integer); virtual; abstract;
     { calls acc.Add for every non-empty cell in the rectangle }
     procedure Accumulate(r1, c1, r2, c2: Integer; acc: TAccumulator); virtual; abstract;
   end;
@@ -107,6 +111,25 @@ function NAValue: TValue;
 function EmptyValue: TValue;
 
 { True for text that is just a number: 12, -3.5, .5, 1E3 }
+{ ---- the @function registry ---- }
+type
+  TFuncProc = function(const args: TNodeArray; src: TCellSource): TValue;
+
+{ Library units register their functions at start-up.  opcode is the number in
+  the worksheet file format, or -1 when none is known (such a formula can be
+  used but is saved as its value).  isList: the file stores an argument count. }
+procedure RegisterFunc(const name: string; minArgs, maxArgs, opcode: Integer; isList: Boolean;
+                       proc: TFuncProc);
+
+{ helpers for function implementations }
+function Numeric(const v: TValue; out d: Double): Boolean;
+{ numeric value of a scalar argument; False with bad set when it is not one }
+function ArgNumber(node: TNode; src: TCellSource; out d: Double; out bad: TValue): Boolean;
+{ text value of a scalar argument (labels and string results; an empty cell is '') }
+function ArgString(node: TNode; src: TCellSource; out s: string; out bad: TValue): Boolean;
+{ the rectangle an argument stands for: a range, a single cell or a range name }
+function RectOf(node: TNode; src: TCellSource; out r1, c1, r2, c2: Integer): Boolean;
+
 { ---- the @function table, for the file formats ---- }
 function FuncCount: Integer;
 function FuncIndexByOpcode(opcode: Integer): Integer;          { -1 if none }
@@ -229,8 +252,6 @@ type
     function Mapped(m: TRefMapper): string; override;
     procedure Emit(w: TRpnWriter); override;
   end;
-
-  TFuncProc = function(const args: TNodeArray; src: TCellSource): TValue;
 
   TFuncDef = record
     Name: string;
@@ -507,214 +528,27 @@ begin
   Result := Left.ToText + Op + Right.ToText;
 end;
 
-{ ------------------------------------------------------------------ functions }
+{ ------------------------------------------------------------------ function registry }
 
-type
-  TSumAcc = class(TAccumulator)
-  public
-    Total: Double;
-    Err, NA: Boolean;
-    procedure Add(const v: TValue); override;
-  end;
-
-procedure TSumAcc.Add(const v: TValue);
-begin
-  case v.Kind of
-    vkNum: if not v.IsEmpty then Total := Total + v.Num;
-    vkErr: Err := True;
-    vkNA: NA := True;
-  end;                                  { text is ignored }
-end;
-
-function RangeOf(node: TNode; src: TCellSource; out r1, c1, r2, c2: Integer): Boolean; forward;
-
-function FnSum(const args: TNodeArray; src: TCellSource): TValue;
 var
-  acc: TSumAcc;
+  Funcs: array of TFuncDef;
+
+procedure RegisterFunc(const name: string; minArgs, maxArgs, opcode: Integer; isList: Boolean;
+                       proc: TFuncProc);
+var
   i: Integer;
-  v: TValue;
-  d: Double;
-  r1, c1, r2, c2: Integer;
 begin
-  acc := TSumAcc.Create;
-  try
-    for i := 0 to High(args) do
-      if RangeOf(args[i], src, r1, c1, r2, c2) then
-        src.Accumulate(r1, c1, r2, c2, acc)
-      else
-      begin
-        v := args[i].Eval(src);
-        if v.Kind = vkErr then acc.Err := True
-        else if v.Kind = vkNA then acc.NA := True
-        else if Numeric(v, d) then acc.Total := acc.Total + d
-        else acc.Err := True;
-      end;
-    if acc.Err then Result := ErrValue
-    else if acc.NA then Result := NAValue
-    else Result := NumValue(acc.Total);
-  finally
-    acc.Free;
-  end;
+  for i := 0 to High(Funcs) do
+    if Funcs[i].Name = name then raise Exception.Create('function registered twice: ' + name);
+  i := Length(Funcs);
+  SetLength(Funcs, i + 1);
+  Funcs[i].Name := name;
+  Funcs[i].MinArgs := minArgs;
+  Funcs[i].MaxArgs := maxArgs;
+  Funcs[i].Proc := proc;
+  Funcs[i].Opcode := opcode;
+  Funcs[i].IsList := isList;
 end;
-
-function FnNA(const args: TNodeArray; src: TCellSource): TValue;
-begin
-  Result := NAValue;
-end;
-
-function FnErr(const args: TNodeArray; src: TCellSource): TValue;
-begin
-  Result := ErrValue;
-end;
-
-function FnTrue(const args: TNodeArray; src: TCellSource): TValue;
-begin
-  Result := NumValue(1);
-end;
-
-function FnFalse(const args: TNodeArray; src: TCellSource): TValue;
-begin
-  Result := NumValue(0);
-end;
-
-function FnPi(const args: TNodeArray; src: TCellSource): TValue;
-begin
-  Result := NumValue(Pi);
-end;
-
-{ numeric value of a scalar argument; False with err set when it cannot be one }
-function NumArg(node: TNode; src: TCellSource; out d: Double; out bad: TValue): Boolean;
-var
-  v: TValue;
-begin
-  d := 0;
-  v := node.Eval(src);
-  if v.Kind = vkErr then begin bad := ErrValue; exit(False); end;
-  if v.Kind = vkNA then begin bad := NAValue; exit(False); end;
-  if not Numeric(v, d) then begin bad := ErrValue; exit(False); end;
-  Result := True;
-end;
-
-function FnRound(const args: TNodeArray; src: TCellSource): TValue;
-var
-  x, n, scale: Double;
-  bad: TValue;
-begin
-  if not NumArg(args[0], src, x, bad) then exit(bad);
-  if not NumArg(args[1], src, n, bad) then exit(bad);
-  n := Trunc(n);
-  if Abs(n) > 300 then exit(ErrValue);
-  scale := Power(10, n);
-  if x >= 0 then Result := NumValue(Int(x * scale + 0.5) / scale)
-  else Result := NumValue(-Int(-x * scale + 0.5) / scale);
-end;
-
-{ payment per period for a loan: principal, interest rate per period, periods }
-function FnPmt(const args: TNodeArray; src: TCellSource): TValue;
-var
-  p, i, n: Double;
-  bad: TValue;
-begin
-  if not NumArg(args[0], src, p, bad) then exit(bad);
-  if not NumArg(args[1], src, i, bad) then exit(bad);
-  if not NumArg(args[2], src, n, bad) then exit(bad);
-  if n <= 0 then exit(ErrValue);
-  if i = 0 then exit(NumValue(p / n));
-  if i <= -1 then exit(ErrValue);
-  Result := NumValue(p * i / (1 - Power(1 + i, -n)));
-end;
-
-const
-  { Every 1-2-3 @function the file formats know, with its file opcode.  Proc is
-    nil for the ones not implemented yet: they parse, round-trip through files,
-    and evaluate to ERR until the function library phase fills them in. }
-  Funcs: array[0..84] of TFuncDef = (
-    (Name: 'SUM'; MinArgs: 1; MaxArgs: 255; Proc: @FnSum; Opcode: 80; IsList: True),
-    (Name: 'NA'; MinArgs: 0; MaxArgs: 0; Proc: @FnNA; Opcode: 31; IsList: False),
-    (Name: 'ERR'; MinArgs: 0; MaxArgs: 0; Proc: @FnErr; Opcode: 32; IsList: False),
-    (Name: 'TRUE'; MinArgs: 0; MaxArgs: 0; Proc: @FnTrue; Opcode: 52; IsList: False),
-    (Name: 'FALSE'; MinArgs: 0; MaxArgs: 0; Proc: @FnFalse; Opcode: 51; IsList: False),
-    (Name: 'PI'; MinArgs: 0; MaxArgs: 0; Proc: @FnPi; Opcode: 38; IsList: False),
-    (Name: 'ROUND'; MinArgs: 2; MaxArgs: 2; Proc: @FnRound; Opcode: 63; IsList: False),
-    (Name: 'PMT'; MinArgs: 3; MaxArgs: 3; Proc: @FnPmt; Opcode: 56; IsList: False),
-    (Name: 'ABS'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 33; IsList: False),
-    (Name: 'INT'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 34; IsList: False),
-    (Name: 'SQRT'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 35; IsList: False),
-    (Name: 'LOG'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 36; IsList: False),
-    (Name: 'LN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 37; IsList: False),
-    (Name: 'SIN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 39; IsList: False),
-    (Name: 'COS'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 40; IsList: False),
-    (Name: 'TAN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 41; IsList: False),
-    (Name: 'ATAN2'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 42; IsList: False),
-    (Name: 'ATAN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 43; IsList: False),
-    (Name: 'ASIN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 44; IsList: False),
-    (Name: 'ACOS'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 45; IsList: False),
-    (Name: 'EXP'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 46; IsList: False),
-    (Name: 'MOD'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 47; IsList: False),
-    (Name: 'CHOOSE'; MinArgs: 2; MaxArgs: 255; Proc: nil; Opcode: 48; IsList: True),
-    (Name: 'ISNA'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 49; IsList: False),
-    (Name: 'ISERR'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 50; IsList: False),
-    (Name: 'RAND'; MinArgs: 0; MaxArgs: 0; Proc: nil; Opcode: 53; IsList: False),
-    (Name: 'DATE'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 54; IsList: False),
-    (Name: 'NOW'; MinArgs: 0; MaxArgs: 0; Proc: nil; Opcode: 55; IsList: False),
-    (Name: 'PV'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 57; IsList: False),
-    (Name: 'FV'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 58; IsList: False),
-    (Name: 'IF'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 59; IsList: False),
-    (Name: 'DAY'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 60; IsList: False),
-    (Name: 'MONTH'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 61; IsList: False),
-    (Name: 'YEAR'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 62; IsList: False),
-    (Name: 'TIME'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 64; IsList: False),
-    (Name: 'HOUR'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 65; IsList: False),
-    (Name: 'MINUTE'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 66; IsList: False),
-    (Name: 'SECOND'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 67; IsList: False),
-    (Name: 'ISNUMBER'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 68; IsList: False),
-    (Name: 'ISSTRING'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 69; IsList: False),
-    (Name: 'LENGTH'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 70; IsList: False),
-    (Name: 'VALUE'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 71; IsList: False),
-    (Name: 'STRING'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 72; IsList: False),
-    (Name: 'MID'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 73; IsList: False),
-    (Name: 'CHAR'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 74; IsList: False),
-    (Name: 'CODE'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 75; IsList: False),
-    (Name: 'FIND'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 76; IsList: False),
-    (Name: 'DATEVALUE'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 77; IsList: False),
-    (Name: 'TIMEVALUE'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 78; IsList: False),
-    (Name: 'CELLPOINTER'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 79; IsList: False),
-    (Name: 'AVG'; MinArgs: 1; MaxArgs: 255; Proc: nil; Opcode: 81; IsList: True),
-    (Name: 'COUNT'; MinArgs: 1; MaxArgs: 255; Proc: nil; Opcode: 82; IsList: True),
-    (Name: 'MIN'; MinArgs: 1; MaxArgs: 255; Proc: nil; Opcode: 83; IsList: True),
-    (Name: 'MAX'; MinArgs: 1; MaxArgs: 255; Proc: nil; Opcode: 84; IsList: True),
-    (Name: 'VLOOKUP'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 85; IsList: False),
-    (Name: 'NPV'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 86; IsList: False),
-    (Name: 'VAR'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 87; IsList: False),
-    (Name: 'STD'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 88; IsList: False),
-    (Name: 'IRR'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 89; IsList: False),
-    (Name: 'HLOOKUP'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 90; IsList: False),
-    (Name: 'DSUM'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 91; IsList: False),
-    (Name: 'DAVG'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 92; IsList: False),
-    (Name: 'DCOUNT'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 93; IsList: False),
-    (Name: 'DMIN'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 94; IsList: False),
-    (Name: 'DMAX'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 95; IsList: False),
-    (Name: 'DVAR'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 96; IsList: False),
-    (Name: 'DSTD'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 97; IsList: False),
-    (Name: 'INDEX'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 98; IsList: False),
-    (Name: 'COLS'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 99; IsList: False),
-    (Name: 'ROWS'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 100; IsList: False),
-    (Name: 'REPEAT'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 101; IsList: False),
-    (Name: 'UPPER'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 102; IsList: False),
-    (Name: 'LOWER'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 103; IsList: False),
-    (Name: 'LEFT'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 104; IsList: False),
-    (Name: 'RIGHT'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 105; IsList: False),
-    (Name: 'REPLACE'; MinArgs: 4; MaxArgs: 4; Proc: nil; Opcode: 106; IsList: False),
-    (Name: 'PROPER'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 107; IsList: False),
-    (Name: 'CELL'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 108; IsList: False),
-    (Name: 'TRIM'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 109; IsList: False),
-    (Name: 'CLEAN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 110; IsList: False),
-    (Name: 'S'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 111; IsList: False),
-    (Name: 'N'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 112; IsList: False),
-    (Name: 'EXACT'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 113; IsList: False),
-    (Name: 'CALL'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 114; IsList: False),
-    (Name: 'INDIRECT'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 115; IsList: False)
-  );
 
 function FindFunc(const name: string): Integer;
 var
@@ -727,7 +561,6 @@ end;
 
 function TFuncNode.Eval(src: TCellSource): TValue;
 begin
-  if not Assigned(Funcs[Def].Proc) then exit(ErrValue);     { not implemented yet }
   Result := Funcs[Def].Proc(Args, src);
 end;
 
@@ -815,6 +648,43 @@ begin
   end
   else if node is TNameNode then
     Result := src.LookupName(TNameNode(node).Name, r1, c1, r2, c2);
+end;
+
+function RectOf(node: TNode; src: TCellSource; out r1, c1, r2, c2: Integer): Boolean;
+begin
+  if node is TRefNode then
+  begin
+    r1 := TRefNode(node).Row; c1 := TRefNode(node).Col;
+    r2 := r1; c2 := c1;
+    exit(True);
+  end;
+  Result := RangeOf(node, src, r1, c1, r2, c2);
+end;
+
+function ArgNumber(node: TNode; src: TCellSource; out d: Double; out bad: TValue): Boolean;
+var
+  v: TValue;
+begin
+  d := 0;
+  v := node.Eval(src);
+  if v.Kind = vkErr then begin bad := ErrValue; exit(False); end;
+  if v.Kind = vkNA then begin bad := NAValue; exit(False); end;
+  if not Numeric(v, d) then begin bad := ErrValue; exit(False); end;
+  Result := True;
+end;
+
+function ArgString(node: TNode; src: TCellSource; out s: string; out bad: TValue): Boolean;
+var
+  v: TValue;
+begin
+  s := '';
+  v := node.Eval(src);
+  if v.Kind = vkErr then begin bad := ErrValue; exit(False); end;
+  if v.Kind = vkNA then begin bad := NAValue; exit(False); end;
+  if v.Kind = vkStr then begin s := v.Str; exit(True); end;
+  if v.IsEmpty then exit(True);
+  bad := ErrValue;
+  Result := False;
 end;
 
 function TNameNode.Eval(src: TCellSource): TValue;
@@ -1225,7 +1095,10 @@ begin
   start := P;
   Inc(P);                                  { the @ }
   q := P;
-  while (q <= Length(S)) and (UpCase(S[q]) in ['A'..'Z', '0'..'9']) do Inc(q);
+  if (q <= Length(S)) and (S[q] = '@') then
+    Inc(q)                                 { @@ }
+  else
+    while (q <= Length(S)) and (UpCase(S[q]) in ['A'..'Z', '0'..'9']) do Inc(q);
   name := UpperCase(Copy(S, P, q - P));
   idx := FindFunc(name);
   if idx < 0 then Fail(start);

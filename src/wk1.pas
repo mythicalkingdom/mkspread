@@ -54,7 +54,7 @@ function ByteToFormat(b: Byte): TCellFormat;
 
 implementation
 
-uses charsets, cellfmt, Math;
+uses charsets, cellfmt, Math, funclib;
 
 { ------------------------------------------------------------------ bytes }
 
@@ -375,6 +375,7 @@ type
     Buf: TBytes;
     OriginR, OriginC: Integer;
     Sh: TSheet;
+    Failed: Boolean;
     function ResolveName(const name: string; out r1, c1, r2, c2: Integer): Boolean; override;
     procedure PutNumber(d: Double); override;
     procedure PutString(const s: string); override;
@@ -445,6 +446,11 @@ end;
 
 procedure TEmitter.PutFunc(opcode, argc: Integer; isList: Boolean);
 begin
+  if opcode < 0 then
+  begin
+    Failed := True;                       { no file code is known for this function }
+    exit;
+  end;
   PutB(Buf, opcode);
   if isList then PutB(Buf, argc);
 end;
@@ -465,7 +471,7 @@ begin
     e.OriginC := originC;
     f.Emit(e);
     PutB(e.Buf, 3);
-    Result := e.Buf;
+    if e.Failed then Result := nil else Result := e.Buf;
   finally
     e.Free;
   end;
@@ -1056,6 +1062,8 @@ begin
       if cell.Formula <> nil then
       begin
         code := EncodeFormula(cell.Formula, sh, r, c);
+        if code = nil then
+          Warn(Where(r, c) + ': formula uses a function the file format has no code for; stored as its value');
         if Length(code) > 2048 then
         begin
           Warn(Where(r, c) + ': formula too long for the file format; stored as its value');

@@ -357,6 +357,9 @@ end;
 procedure TSession.EndChange;
 begin
   Sheet.Journal := nil;
+  Sheet.PointerRow := CurRow;
+  Sheet.PointerCol := CurCol;
+  Sheet.FileName := FileName;
   Calc.SheetChanged;
 end;
 

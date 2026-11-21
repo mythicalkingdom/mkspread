@@ -51,7 +51,7 @@ type
 
 implementation
 
-uses SysUtils;
+uses SysUtils, funclib, cellfmt;
 
 type
   TCalcSource = class(TCellSource)
@@ -62,6 +62,8 @@ type
     constructor Create(ACalc: TCalc; ASheet: TSheet);
     function CellValue(r, c: Integer): TValue; override;
     function LookupName(const name: string; out r1, c1, r2, c2: Integer): Boolean; override;
+    function CellInfo(const attr: string; r, c: Integer): TValue; override;
+    procedure PointerCell(out r, c: Integer); override;
     procedure Accumulate(r1, c1, r2, c2: Integer; acc: TAccumulator); override;
   end;
 
@@ -78,6 +80,52 @@ begin
 end;
 
 function ValueOfCell(cell: TCell; calc: TCalc): TValue; forward;
+
+function TCalcSource.CellInfo(const attr: string; r, c: Integer): TValue;
+var
+  cell: TCell;
+  p: Char;
+  t, a: string;
+  d: Double;
+begin
+  cell := FSheet.Find(r, c);
+  if attr = 'address' then
+    exit(StrValue('$' + ColLetter(c) + '$' + IntToStr(r)));
+  if attr = 'col' then exit(NumValue(c));
+  if attr = 'row' then exit(NumValue(r));
+  if attr = 'width' then exit(NumValue(FSheet.ColWidth(c)));
+  if attr = 'protect' then exit(NumValue(1));          { cells are protected by default }
+  if attr = 'filename' then exit(StrValue(FSheet.FileName));
+  if attr = 'type' then
+  begin
+    if (cell = nil) or (cell.Raw = '') then exit(StrValue('b'));
+    if TextOf(cell, p, t) then exit(StrValue('l'));
+    exit(StrValue('v'));
+  end;
+  if attr = 'prefix' then
+  begin
+    if (cell <> nil) and TextOf(cell, p, t) and (cell.Formula = nil) then exit(StrValue(p));
+    exit(StrValue(''));
+  end;
+  if attr = 'contents' then
+  begin
+    if (cell = nil) or (cell.Raw = '') then exit(EmptyValue);
+    exit(ValueOfCell(cell, FCalc));
+  end;
+  if attr = 'format' then
+  begin
+    if cell = nil then a := FormatTag(FSheet.GlobalFmt)
+    else a := FormatTag(EffectiveFormat(cell, FSheet));
+    exit(StrValue(a));
+  end;
+  Result := ErrValue;
+end;
+
+procedure TCalcSource.PointerCell(out r, c: Integer);
+begin
+  r := FSheet.PointerRow;
+  c := FSheet.PointerCol;
+end;
 
 function TCalcSource.LookupName(const name: string; out r1, c1, r2, c2: Integer): Boolean;
 var
