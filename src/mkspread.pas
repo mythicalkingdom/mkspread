@@ -1,5 +1,5 @@
 program mkspread;
-{ A Lotus 1-2-3 Release 2.x look-alike (screen + menus only).
+{ A DOS-style terminal spreadsheet (screen + menus only).
   Phase 1: every menu command is a stub.
   Usage: mkspread          start with an empty worksheet
          mkspread demo     start with the sample sheet from the screenshot }
@@ -150,7 +150,7 @@ begin
   A(d + 1, 'Range|Cancel the print range');
   A(d + 1, 'Borders|Cancel border columns and rows');
   A(d + 1, 'Format|Restore default margins, page length and setup');
-  A(d, 'Align|Tell 1-2-3 the paper is at the top of a page');
+  A(d, 'Align|Tell the program the paper is at the top of a page');
   A(d, 'Go|Print the specified range');
   A(d, 'Quit|Return to READY mode');
 end;
@@ -404,10 +404,10 @@ begin
   A(3, 'Quit|Return to READY mode');
 
   { ---- System / Quit ---- }
-  A(1, 'System|Leave 1-2-3 temporarily and use the operating system');
-  A(1, 'Quit|End the 1-2-3 session');
-  A(2, 'No|Do not end the 1-2-3 session; return to READY mode');
-  A(2, 'Yes|End the 1-2-3 session (Answer Yes only if you have saved your work)');
+  A(1, 'System|Leave the program temporarily and use the operating system');
+  A(1, 'Quit|End the session');
+  A(2, 'No|Do not end the session; return to READY mode');
+  A(2, 'Yes|End the session (Answer Yes only if you have saved your work)');
 end;
 
 { ------------------------------------------------------------------ cells }
