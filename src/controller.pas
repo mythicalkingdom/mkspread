@@ -20,7 +20,7 @@ unit controller;
 
 interface
 
-uses session, commands;
+uses session, commands, sheet;
 
 type
   TController = class
@@ -37,6 +37,9 @@ type
     procedure EntryKey(k: Integer);
     procedure EditKey(k: Integer);
     procedure GotoKey(k: Integer);
+    function EditText(k: Integer): Boolean;
+    procedure TextPromptKey(k: Integer);
+    procedure NamesKey(k: Integer);
     procedure PromptKey(k: Integer);
     procedure PointKey(k: Integer);
     procedure MenuKey(k: Integer);
@@ -52,13 +55,13 @@ type
   end;
 
 { "A1", "A1..C5", "a1.c5" -> normalized range }
-function ParseRangeText(const s: string; out r: TRange): Boolean;
+function ParseRangeText(sh: TSheet; const s: string; out r: TRange): Boolean;
 
 implementation
 
-uses keys, sheet, cellfmt, formula, menutree, u8edit, SysUtils;
+uses keys, cellfmt, formula, menutree, u8edit, SysUtils;
 
-function ParseRangeText(const s: string; out r: TRange): Boolean;
+function ParseRangeText(sh: TSheet; const s: string; out r: TRange): Boolean;
 var
   p, q, c1, r1, c2, r2: Integer;
   t: string;
@@ -67,6 +70,8 @@ begin
   p := Pos('.', t);
   if p = 0 then
   begin
+    { a range name, or a single cell address }
+    if IsValidName(t) and sh.FindName(t, r) then exit(True);
     Result := ParseAddr(t, c1, r1);
     c2 := c1;
     r2 := r1;
@@ -155,7 +160,7 @@ begin
   end;
   nl := FS.LeftCol;
   w := 0;
-  while (nl > 1) and (w + FS.Sheet.ColWidth(nl - 1) <= FS.GridW) do
+  while (nl > 1) and (w + FS.Sheet.ColWidth(nl - 1) <= FS.ScrollW) do
   begin
     Dec(nl);
     Inc(w, FS.Sheet.ColWidth(nl));
@@ -198,16 +203,16 @@ begin
       end;
     kPgUp:
       begin
-        Dec(FS.CurRow, FS.GridRows);
-        Dec(FS.TopRow, FS.GridRows);
+        Dec(FS.CurRow, FS.ScrollRows);
+        Dec(FS.TopRow, FS.ScrollRows);
         if FS.CurRow < 1 then FS.CurRow := 1;
         if FS.TopRow < 1 then FS.TopRow := 1;
         FS.Normalize;
       end;
     kPgDn:
       begin
-        Inc(FS.CurRow, FS.GridRows);
-        Inc(FS.TopRow, FS.GridRows);
+        Inc(FS.CurRow, FS.ScrollRows);
+        Inc(FS.TopRow, FS.ScrollRows);
         FS.Normalize;
       end;
     kTab, kCtrlRight, kCtrlPgDn: BigRight;
@@ -347,15 +352,11 @@ begin
   end;
 end;
 
-procedure TController.EditKey(k: Integer);
+{ Cursor movement and typing inside FS.Entry (EDIT mode and text prompts). }
+function TController.EditText(k: Integer): Boolean;
 begin
+  Result := True;
   case k of
-    kEnter: CommitText(FS.Entry);
-    kEsc, kBreak:
-      begin
-        FS.Mode := mReady;
-        FS.Entry := '';
-      end;
     kLeft: if FS.EditPos > 0 then Dec(FS.EditPos);
     kRight: if FS.EditPos < U8Len(FS.Entry) then Inc(FS.EditPos);
     kHome: FS.EditPos := 0;
@@ -367,13 +368,73 @@ begin
         Dec(FS.EditPos);
       end;
     kDel: U8DeleteAt(FS.Entry, FS.EditPos);
-    kUp:   if CommitText(FS.Entry) then MoveCur(-1, 0);
-    kDown: if CommitText(FS.Entry) then MoveCur(1, 0);
     32..126, 128..kSpecialBase - 1:
       if Length(FS.Entry) < 240 then
       begin
         U8Insert(FS.Entry, FS.EditPos, UTF8Encode(WideChar(k)));
         Inc(FS.EditPos);
+      end;
+  else
+    Result := False;
+  end;
+end;
+
+procedure TController.EditKey(k: Integer);
+begin
+  if EditText(k) then exit;
+  case k of
+    kEnter: CommitText(FS.Entry);
+    kEsc, kBreak:
+      begin
+        FS.Mode := mReady;
+        FS.Entry := '';
+      end;
+    kUp:   if CommitText(FS.Entry) then MoveCur(-1, 0);
+    kDown: if CommitText(FS.Entry) then MoveCur(1, 0);
+  end;
+end;
+
+procedure TController.TextPromptKey(k: Integer);
+begin
+  if EditText(k) then exit;
+  case k of
+    kEnter:
+      begin
+        FS.PromptStr := Trim(FS.Entry);
+        FS.Mode := mReady;
+        FS.PromptCont(FS, FS.PromptPath);
+      end;
+    kEsc, kBreak: FS.Mode := mReady;
+    kF1 + 2: FS.OpenNameList;
+  end;
+end;
+
+procedure TController.NamesKey(k: Integer);
+var
+  n, name: string;
+begin
+  n := '';
+  case k of
+    kRight, 32: FS.NameIdx := (FS.NameIdx + 1) mod FS.NameChoices.Count;
+    kLeft: FS.NameIdx := (FS.NameIdx + FS.NameChoices.Count - 1) mod FS.NameChoices.Count;
+    kHome: FS.NameIdx := 0;
+    kEnd: FS.NameIdx := FS.NameChoices.Count - 1;
+    kEsc, kBreak: FS.Mode := FS.NameReturn;
+    kEnter:
+      begin
+        name := FS.NameChoices[FS.NameIdx];
+        FS.Mode := FS.NameReturn;
+        if FS.Mode = mPoint then
+        begin
+          FS.Typing := True;
+          FS.Entry := name;
+          PointFinish(True);
+        end
+        else
+        begin
+          FS.Entry := name;
+          FS.EditPos := U8Len(name);
+        end;
       end;
   end;
 end;
@@ -415,6 +476,11 @@ procedure TController.PromptKey(k: Integer);
 var
   n: Integer;
 begin
+  if FS.PromptIsText then
+  begin
+    TextPromptKey(k);
+    exit;
+  end;
   case k of
     kEnter:
       begin
@@ -459,7 +525,7 @@ var
   ok: Boolean;
 begin
   if FS.Typing then
-    ok := ParseRangeText(FS.Entry, r)
+    ok := ParseRangeText(FS.Sheet, FS.Entry, r)
   else
   begin
     r := FS.Selection;
@@ -486,6 +552,11 @@ end;
 
 procedure TController.PointKey(k: Integer);
 begin
+  if k = kF1 + 2 then
+  begin
+    FS.OpenNameList;
+    exit;
+  end;
   if FS.Typing then
   begin
     case k of
@@ -588,6 +659,7 @@ begin
     mGoto: GotoKey(k);
     mPrompt: PromptKey(k);
     mPoint: PointKey(k);
+    mNames: NamesKey(k);
   end;
   FS.EndChange;
 end;

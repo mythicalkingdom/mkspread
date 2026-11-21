@@ -21,19 +21,15 @@ unit session;
 
 interface
 
-uses sheet, menutree, calc;
+uses Classes, sheet, menutree, calc;
 
 type
-  TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint);
+  TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint, mNames);
 
   TSession = class;
   { A command, or the continuation of a command that asked a question.
     path is the menu path that started it, e.g. 'Range Format Fixed'. }
   TCommandProc = procedure(S: TSession; const path: string);
-
-  TRange = record
-    R1, C1, R2, C2: Integer;
-  end;
 
   { while a numeric prompt is open, Left/Right arrows can nudge a column width }
   TPromptLive = (plNone, plColumn, plGlobalWidth);
@@ -65,6 +61,13 @@ type
     PromptPath: string;
     PromptLive: TPromptLive;
     PromptOrigWidth: Integer;
+    PromptIsText: Boolean;              { a text prompt rather than a number }
+    PromptStr: string;                  { its answer }
+
+    { choosing a range name from a list (F3) }
+    NameChoices: TStringList;
+    NameIdx: Integer;
+    NameReturn: TMode;                  { mode to go back to }
 
     { range selection (POINT mode) }
     PointText: string;
@@ -76,6 +79,8 @@ type
     Range: TRange;                      { result of the last range prompt }
 
     PendFmt: TCellFormat;               { scratch for multi-step commands }
+    PendRange: TRange;
+    PendStr: string;
 
     { single-level undo: a journal of what the last command changed }
     UndoSet: TChangeSet;
@@ -83,6 +88,12 @@ type
 
     constructor Create;
     destructor Destroy; override;
+    function HasTitleRows: Boolean;
+    function HasTitleCols: Boolean;
+    function TitleRowCount: Integer;
+    function TitleWidth: Integer;
+    function ScrollRows: Integer;       { rows available to scrolling }
+    function ScrollW: Integer;          { columns' width available to scrolling }
     function RightColOf(left: Integer): Integer;
     procedure Normalize;
     procedure OpenMenu;
@@ -90,6 +101,8 @@ type
 
     procedure AskNumber(const text: string; def, lo, hi: Integer;
                         cont: TCommandProc; const path: string; live: TPromptLive = plNone);
+    procedure AskText(const text, def: string; cont: TCommandProc; const path: string);
+    function OpenNameList: Boolean;     { False when there are no names }
     procedure AskRange(const text: string; cont: TCommandProc; const path: string);
     function Selection: TRange;                 { cells to highlight }
     procedure SaveUndo;                         { call before changing the worksheet }
@@ -97,19 +110,9 @@ type
     procedure DoUndo;
   end;
 
-function NormRange(r1, c1, r2, c2: Integer): TRange;
-
 implementation
 
-uses menudata, SysUtils;
-
-function NormRange(r1, c1, r2, c2: Integer): TRange;
-begin
-  if r1 <= r2 then begin Result.R1 := r1; Result.R2 := r2; end
-  else begin Result.R1 := r2; Result.R2 := r1; end;
-  if c1 <= c2 then begin Result.C1 := c1; Result.C2 := c2; end
-  else begin Result.C1 := c2; Result.C2 := c1; end;
-end;
+uses menudata, u8edit, SysUtils;
 
 constructor TSession.Create;
 begin
@@ -117,6 +120,7 @@ begin
   Sheet := TSheet.Create;
   Calc := TCalc.Create(Sheet);
   Menus := BuildMenuTree;
+  NameChoices := TStringList.Create;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
   GridRows := 20;
   GridW := 76;
@@ -125,11 +129,48 @@ end;
 
 destructor TSession.Destroy;
 begin
+  NameChoices.Free;
   Menus.Free;
   UndoSet.Free;
   Calc.Free;
   Sheet.Free;
   inherited Destroy;
+end;
+
+function TSession.HasTitleRows: Boolean;
+begin
+  Result := (Sheet.TitleR1 > 0) and (Sheet.TitleR2 >= Sheet.TitleR1);
+end;
+
+function TSession.HasTitleCols: Boolean;
+begin
+  Result := (Sheet.TitleC1 > 0) and (Sheet.TitleC2 >= Sheet.TitleC1);
+end;
+
+function TSession.TitleRowCount: Integer;
+begin
+  if HasTitleRows then Result := Sheet.TitleR2 - Sheet.TitleR1 + 1 else Result := 0;
+end;
+
+function TSession.TitleWidth: Integer;
+var
+  c: Integer;
+begin
+  Result := 0;
+  if HasTitleCols then
+    for c := Sheet.TitleC1 to Sheet.TitleC2 do Inc(Result, Sheet.ColWidth(c));
+end;
+
+function TSession.ScrollRows: Integer;
+begin
+  Result := GridRows - TitleRowCount;
+  if Result < 1 then Result := 1;
+end;
+
+function TSession.ScrollW: Integer;
+begin
+  Result := GridW - TitleWidth;
+  if Result < 1 then Result := 1;
 end;
 
 function TSession.RightColOf(left: Integer): Integer;
@@ -138,7 +179,7 @@ var
 begin
   c := left;
   w := Sheet.ColWidth(c);
-  while (c < MaxCol) and (w + Sheet.ColWidth(c + 1) <= GridW) do
+  while (c < MaxCol) and (w + Sheet.ColWidth(c + 1) <= ScrollW) do
   begin
     Inc(c);
     Inc(w, Sheet.ColWidth(c));
@@ -147,17 +188,33 @@ begin
 end;
 
 procedure TSession.Normalize;
+var
+  minLeft, minTop: Integer;
 begin
   if CurCol < 1 then CurCol := 1;
   if CurCol > MaxCol then CurCol := MaxCol;
   if CurRow < 1 then CurRow := 1;
   if CurRow > MaxRow then CurRow := MaxRow;
-  if CurCol < LeftCol then LeftCol := CurCol;
-  while (LeftCol < CurCol) and (RightColOf(LeftCol) < CurCol) do Inc(LeftCol);
-  if CurRow < TopRow then TopRow := CurRow;
-  if CurRow > TopRow + GridRows - 1 then TopRow := CurRow - GridRows + 1;
-  if TopRow < 1 then TopRow := 1;
-  if TopRow > MaxRow - GridRows + 1 then TopRow := MaxRow - GridRows + 1;
+
+  minLeft := 1;
+  if HasTitleCols then minLeft := Sheet.TitleC2 + 1;
+  if LeftCol < minLeft then LeftCol := minLeft;
+  if not (HasTitleCols and (CurCol >= Sheet.TitleC1) and (CurCol <= Sheet.TitleC2)) then
+  begin
+    if CurCol < LeftCol then LeftCol := CurCol;
+    while (LeftCol < CurCol) and (RightColOf(LeftCol) < CurCol) do Inc(LeftCol);
+  end;
+
+  minTop := 1;
+  if HasTitleRows then minTop := Sheet.TitleR2 + 1;
+  if TopRow < minTop then TopRow := minTop;
+  if not (HasTitleRows and (CurRow >= Sheet.TitleR1) and (CurRow <= Sheet.TitleR2)) then
+  begin
+    if CurRow < TopRow then TopRow := CurRow;
+    if CurRow > TopRow + ScrollRows - 1 then TopRow := CurRow - ScrollRows + 1;
+  end;
+  if TopRow > MaxRow - ScrollRows + 1 then TopRow := MaxRow - ScrollRows + 1;
+  if TopRow < minTop then TopRow := minTop;
 end;
 
 procedure TSession.OpenMenu;
@@ -197,6 +254,33 @@ begin
   end;
   Entry := IntToStr(def);
   EditPos := Length(Entry);
+  PromptIsText := False;
+end;
+
+procedure TSession.AskText(const text, def: string; cont: TCommandProc; const path: string);
+begin
+  Mode := mPrompt;
+  PromptText := text;
+  PromptCont := cont;
+  PromptPath := path;
+  PromptLive := plNone;
+  PromptIsText := True;
+  Entry := def;
+  EditPos := U8Len(def);
+end;
+
+function TSession.OpenNameList: Boolean;
+begin
+  Sheet.NameList(NameChoices);
+  Result := NameChoices.Count > 0;
+  if not Result then
+  begin
+    Msg := 'No range names are defined';
+    exit;
+  end;
+  NameReturn := Mode;
+  NameIdx := 0;
+  Mode := mNames;
 end;
 
 procedure TSession.AskRange(const text: string; cont: TCommandProc; const path: string);

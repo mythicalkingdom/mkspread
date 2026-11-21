@@ -61,6 +61,7 @@ type
   public
     constructor Create(ACalc: TCalc; ASheet: TSheet);
     function CellValue(r, c: Integer): TValue; override;
+    function LookupName(const name: string; out r1, c1, r2, c2: Integer): Boolean; override;
     procedure Accumulate(r1, c1, r2, c2: Integer; acc: TAccumulator); override;
   end;
 
@@ -77,6 +78,17 @@ begin
 end;
 
 function ValueOfCell(cell: TCell; calc: TCalc): TValue; forward;
+
+function TCalcSource.LookupName(const name: string; out r1, c1, r2, c2: Integer): Boolean;
+var
+  r: TRange;
+begin
+  Result := FSheet.FindName(name, r);
+  if Result then
+  begin
+    r1 := r.R1; c1 := r.C1; r2 := r.R2; c2 := r.C2;
+  end;
+end;
 
 function TCalcSource.CellValue(r, c: Integer): TValue;
 var

@@ -20,7 +20,7 @@ unit sheet;
 
 interface
 
-uses SysUtils, Generics.Collections, formula;
+uses SysUtils, Classes, Generics.Collections, formula;
 
 const
   LabelPrefixes = ['''', '"', '^', '\'];
@@ -41,6 +41,12 @@ type
   end;
 
   TRecalcOrder = (roNatural, roColumnwise, roRowwise);
+
+  TRange = record
+    R1, C1, R2, C2: Integer;
+  end;
+
+  TNameMap = specialize TDictionary<string, TRange>;
 
   TCell = class
   public
@@ -78,6 +84,7 @@ type
     RecalcOrder: TRecalcOrder;
     RecalcManual: Boolean;
     Iterations: Integer;
+    TitleR1, TitleR2, TitleC1, TitleC2: Integer;
   end;
 
   { The "before" picture of everything one command changed: only the cells and
@@ -88,6 +95,7 @@ type
     Cells: TCellStateMap;
     Widths: TWidthMap;
     Globals: TSheetGlobals;
+    Names: TNameMap;                   { the range names as they were }
     constructor Create;
     destructor Destroy; override;
     function Count: Integer;           { cells + widths recorded }
@@ -97,6 +105,7 @@ type
   private
     FCells: TCellMap;
     FColWd: array[1..MaxCol] of Integer;   { 0 = use global width }
+    FNames: TNameMap;
     function StateOf(key: Int64): TCellState;
     procedure ApplyState(key: Int64; const st: TCellState);
     procedure Touch(r, c: Integer);        { remember a cell before it changes }
@@ -112,6 +121,8 @@ type
     RecalcManual: Boolean;        { True: recalculate only on F9 }
     Iterations: Integer;          { recalculation passes, 1..50 }
     Changed: Boolean;             { cell contents changed since the owner last looked }
+    { Frozen titles: rows R1..R2 / columns C1..C2 stay on screen; 0 = none. }
+    TitleR1, TitleR2, TitleC1, TitleC2: Integer;
     { While set, every change is recorded here first (see TChangeSet).  The
       owner starts a group before a command and clears the property after. }
     Journal: TChangeSet;
@@ -129,6 +140,15 @@ type
     function Revert(cs: TChangeSet): TChangeSet;
     procedure SetCellFormat(r, c: Integer; const fmt: TCellFormat; makeIt: Boolean);
     function NonEmpty(r, c: Integer): Boolean;    { has contents, not just a format }
+    { range names (stored upper case) }
+    function FindName(const name: string; out r: TRange): Boolean;
+    procedure SetName(const name: string; const r: TRange);
+    procedure DeleteName(const name: string);
+    procedure ClearNames;
+    function NameCount: Integer;
+    procedure NameList(list: TStrings);           { sorted }
+    procedure RemapNames(m: TRefMapper);          { names follow their cells }
+    procedure CopyNamesTo(dest: TNameMap);
     procedure UsedExtent(out maxR, maxC: Integer);
     procedure EachCell(visit: TCellVisitor; data: Pointer);
     function ColWidth(c: Integer): Integer;
@@ -138,6 +158,7 @@ type
     property Count: Integer read GetCount;
   end;
 
+function NormRange(r1, c1, r2, c2: Integer): TRange;
 function MakeFormat(k: TFormatKind; dec: Integer): TCellFormat;
 function InBounds(r, c: Integer): Boolean;
 function ColLetter(c: Integer): string;
@@ -150,18 +171,28 @@ begin
   inherited Create;
   Cells := TCellStateMap.Create;
   Widths := TWidthMap.Create;
+  Names := TNameMap.Create;
 end;
 
 destructor TChangeSet.Destroy;
 begin
   Cells.Free;
   Widths.Free;
+  Names.Free;
   inherited Destroy;
 end;
 
 function TChangeSet.Count: Integer;
 begin
   Result := Cells.Count + Widths.Count;
+end;
+
+function NormRange(r1, c1, r2, c2: Integer): TRange;
+begin
+  if r1 <= r2 then begin Result.R1 := r1; Result.R2 := r2; end
+  else begin Result.R1 := r2; Result.R2 := r1; end;
+  if c1 <= c2 then begin Result.C1 := c1; Result.C2 := c2; end
+  else begin Result.C1 := c2; Result.C2 := c1; end;
 end;
 
 function MakeFormat(k: TFormatKind; dec: Integer): TCellFormat;
@@ -238,6 +269,7 @@ constructor TSheet.Create;
 begin
   inherited Create;
   FCells := TCellMap.Create;
+  FNames := TNameMap.Create;
   GlobalWidth := 9;
   GlobalFmt := MakeFormat(fkGeneral, 0);
   GlobalLabelPrefix := '''';
@@ -249,6 +281,7 @@ destructor TSheet.Destroy;
 begin
   Clear;
   FCells.Free;
+  FNames.Free;
   inherited Destroy;
 end;
 
@@ -344,6 +377,10 @@ begin
   Result.RecalcOrder := RecalcOrder;
   Result.RecalcManual := RecalcManual;
   Result.Iterations := Iterations;
+  Result.TitleR1 := TitleR1;
+  Result.TitleR2 := TitleR2;
+  Result.TitleC1 := TitleC1;
+  Result.TitleC2 := TitleC2;
 end;
 
 function TSheet.StateOf(key: Int64): TCellState;
@@ -399,6 +436,7 @@ function TSheet.BeginChange: TChangeSet;
 begin
   Result := TChangeSet.Create;
   Result.Globals := GlobalsNow;
+  CopyNamesTo(Result.Names);
   Journal := Result;
 end;
 
@@ -406,10 +444,12 @@ function TSheet.Revert(cs: TChangeSet): TChangeSet;
 var
   pair: TCellStateMap.TDictionaryPair;
   wp: TWidthMap.TDictionaryPair;
+  np: TNameMap.TDictionaryPair;
 begin
   Journal := nil;                          { never record while reverting }
   Result := TChangeSet.Create;
   Result.Globals := GlobalsNow;
+  CopyNamesTo(Result.Names);
   for pair in cs.Cells do
   begin
     Result.Cells.Add(pair.Key, StateOf(pair.Key));
@@ -427,6 +467,12 @@ begin
   RecalcOrder := cs.Globals.RecalcOrder;
   RecalcManual := cs.Globals.RecalcManual;
   Iterations := cs.Globals.Iterations;
+  TitleR1 := cs.Globals.TitleR1;
+  TitleR2 := cs.Globals.TitleR2;
+  TitleC1 := cs.Globals.TitleC1;
+  TitleC2 := cs.Globals.TitleC2;
+  FNames.Clear;
+  for np in cs.Names do FNames.Add(np.Key, np.Value);
   Changed := True;
 end;
 
@@ -443,6 +489,83 @@ begin
   else
     Touch(r, c);
   cell.Fmt := fmt;
+end;
+
+procedure TSheet.CopyNamesTo(dest: TNameMap);
+var
+  np: TNameMap.TDictionaryPair;
+begin
+  dest.Clear;
+  for np in FNames do dest.Add(np.Key, np.Value);
+end;
+
+function TSheet.FindName(const name: string; out r: TRange): Boolean;
+begin
+  Result := FNames.TryGetValue(UpperCase(name), r);
+end;
+
+procedure TSheet.SetName(const name: string; const r: TRange);
+begin
+  FNames.AddOrSetValue(UpperCase(name), r);
+  Changed := True;
+end;
+
+procedure TSheet.DeleteName(const name: string);
+begin
+  FNames.Remove(UpperCase(name));
+  Changed := True;
+end;
+
+procedure TSheet.ClearNames;
+begin
+  FNames.Clear;
+  Changed := True;
+end;
+
+function TSheet.NameCount: Integer;
+begin
+  Result := FNames.Count;
+end;
+
+procedure TSheet.NameList(list: TStrings);
+var
+  np: TNameMap.TDictionaryPair;
+  sl: TStringList;
+begin
+  sl := TStringList.Create;
+  try
+    for np in FNames do sl.Add(np.Key);
+    sl.Sort;
+    list.Assign(sl);
+  finally
+    sl.Free;
+  end;
+end;
+
+procedure TSheet.RemapNames(m: TRefMapper);
+var
+  np: TNameMap.TDictionaryPair;
+  keys: TStringList;
+  i: Integer;
+  r: TRange;
+  r1, c1, r2, c2: Integer;
+begin
+  keys := TStringList.Create;
+  try
+    for np in FNames do keys.Add(np.Key);
+    for i := 0 to keys.Count - 1 do
+    begin
+      r := FNames[keys[i]];
+      r1 := r.R1; c1 := r.C1; r2 := r.R2; c2 := r.C2;
+      if m.MapRange(r1, c1, r2, c2, False, False, False, False) then
+        FNames[keys[i]] := NormRange(r1, c1, r2, c2)
+      else
+        FNames.Remove(keys[i]);
+    end;
+  finally
+    keys.Free;
+  end;
+  Changed := True;
 end;
 
 function TSheet.NonEmpty(r, c: Integer): Boolean;

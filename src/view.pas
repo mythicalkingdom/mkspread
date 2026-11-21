@@ -32,7 +32,7 @@ type
 
 implementation
 
-uses terminal, sheet, cellfmt, menutree, SysUtils;
+uses terminal, sheet, cellfmt, menutree, u8edit, SysUtils;
 
 const
   MinW = 80;
@@ -50,10 +50,13 @@ begin
     Result := s + StringOfChar(' ', n - Length(u));
 end;
 
-procedure DrawRow(S: TSession; r, y, rc, gridW: Integer);
+type
+  TIntArray = array of Integer;
+
+procedure DrawRow(S: TSession; r, y: Integer; const cols: TIntArray; gridW: Integer);
 var
   buf, t: UnicodeString;
-  c, c2, x, w, k, av, hx, hw: Integer;
+  ci, cj, c, x, w, k, av, hx, hw: Integer;
   cell: TCell;
   sel: TRange;
   pre: Char;
@@ -75,8 +78,9 @@ begin
   hw := 0;
   x := 1;
   sel := S.Selection;
-  for c := S.LeftCol to rc do
+  for ci := 0 to High(cols) do
   begin
+    c := cols[ci];
     w := S.Sheet.ColWidth(c);
     if (r >= sel.R1) and (r <= sel.R2) and (c >= sel.C1) and (c <= sel.C2) then
     begin
@@ -93,11 +97,11 @@ begin
           '''':
             begin
               av := w;
-              c2 := c + 1;
-              while (c2 <= rc) and (S.Sheet.Find(r, c2) = nil) do
+              cj := ci + 1;
+              while (cj <= High(cols)) and (S.Sheet.Find(r, cols[cj]) = nil) do
               begin
-                Inc(av, S.Sheet.ColWidth(c2));
-                Inc(c2);
+                Inc(av, S.Sheet.ColWidth(cols[cj]));
+                Inc(cj);
               end;
               PutBuf(x, Copy(t, 1, av));
             end;
@@ -157,7 +161,8 @@ end;
 
 procedure TView.Draw(S: TSession);
 var
-  w, h, gridW, gridRows, rc, r, c, x, cx, i: Integer;
+  w, h, gridW, gridRows, rc, r, c, x, cx, i, n, line: Integer;
+  cols, rowsList: TIntArray;
   st, mname, es: string;
   cell: TCell;
   sel: TRange;
@@ -184,6 +189,34 @@ begin
   S.Normalize;
   rc := S.RightColOf(S.LeftCol);
 
+  { visible columns: frozen title columns, then the scrolling ones }
+  SetLength(cols, 0);
+  if S.HasTitleCols then
+    for c := S.Sheet.TitleC1 to S.Sheet.TitleC2 do
+    begin
+      SetLength(cols, Length(cols) + 1);
+      cols[High(cols)] := c;
+    end;
+  for c := S.LeftCol to rc do
+  begin
+    SetLength(cols, Length(cols) + 1);
+    cols[High(cols)] := c;
+  end;
+  { visible rows likewise }
+  SetLength(rowsList, 0);
+  if S.HasTitleRows then
+    for r := S.Sheet.TitleR1 to S.Sheet.TitleR2 do
+    begin
+      SetLength(rowsList, Length(rowsList) + 1);
+      rowsList[High(rowsList)] := r;
+    end;
+  n := Length(rowsList);
+  for r := S.TopRow to S.TopRow + (gridRows - n) - 1 do
+  begin
+    SetLength(rowsList, Length(rowsList) + 1);
+    rowsList[High(rowsList)] := r;
+  end;
+
   { line 1: cell status and mode indicator }
   st := ColLetter(S.CurCol) + IntToStr(S.CurRow) + ':';
   cell := S.Sheet.Find(S.CurRow, S.CurCol);
@@ -199,6 +232,7 @@ begin
     mGoto:  mname := 'POINT';
     mPrompt: mname := 'EDIT';
     mPoint: mname := 'POINT';
+    mNames: mname := 'NAMES';
   end;
   TermPut(1, 1, taNormal, PadR(st, w - Length(mname) - 1));
   TermPut(w - Length(mname) + 1, 1, taHi, mname);
@@ -232,7 +266,28 @@ begin
       begin
         es := S.PromptText + ' ' + S.Entry;
         TermPut(1, 2, taNormal, es);
-        cx := Length(es) + 1;
+        if S.PromptIsText then
+          cx := U8Len(S.PromptText) + 2 + S.EditPos
+        else
+          cx := Length(es) + 1;
+      end;
+    mNames:
+      begin
+        x := 1;
+        for i := 0 to S.NameChoices.Count - 1 do
+        begin
+          if x + Length(S.NameChoices[i]) > w then break;
+          if i = S.NameIdx then TermPut(x, 2, taHi, S.NameChoices[i])
+          else TermPut(x, 2, taNormal, S.NameChoices[i]);
+          Inc(x, Length(S.NameChoices[i]) + 2);
+        end;
+        if S.Sheet.FindName(S.NameChoices[S.NameIdx], sel) then
+        begin
+          es := ColLetter(sel.C1) + IntToStr(sel.R1);
+          if (sel.R1 <> sel.R2) or (sel.C1 <> sel.C2) then
+            es := es + '..' + ColLetter(sel.C2) + IntToStr(sel.R2);
+          TermPut(1, 3, taNormal, es);
+        end;
       end;
     mPoint:
       begin
@@ -253,18 +308,19 @@ begin
   { line 4: column letters }
   TermPut(1, 4, taHi, StringOfChar(' ', w));
   x := BorderW + 1;
-  for c := S.LeftCol to rc do
+  for i := 0 to High(cols) do
   begin
-    i := S.Sheet.ColWidth(c);
-    TermPut(x + (i - Length(ColLetter(c))) div 2, 4, taHi, ColLetter(c));
-    Inc(x, i);
+    c := S.Sheet.ColWidth(cols[i]);
+    TermPut(x + (c - Length(ColLetter(cols[i]))) div 2, 4, taHi, ColLetter(cols[i]));
+    Inc(x, c);
   end;
 
   { rows }
-  for r := S.TopRow to S.TopRow + gridRows - 1 do
+  for line := 0 to High(rowsList) do
   begin
-    TermPut(1, 5 + r - S.TopRow, taHi, PadR(IntToStr(r), BorderW));
-    DrawRow(S, r, 5 + r - S.TopRow, rc, gridW);
+    r := rowsList[line];
+    TermPut(1, 5 + line, taHi, PadR(IntToStr(r), BorderW));
+    DrawRow(S, r, 5 + line, cols, gridW);
   end;
 
   { bottom line: clock, message, indicators }

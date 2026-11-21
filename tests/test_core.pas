@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, keys, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
+uses SysUtils, Classes, keys, editops, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
 
 var
   Fails, Total: Integer;
@@ -310,12 +310,13 @@ begin
   CheckBad('1+', 3);
   CheckBad('@FOO(1)', 1);
   CheckBad('12abc', 3);
-  CheckBad('+A1B', 0);
   CheckBad('@SUM()', 1);
   CheckBad('(1+2', 5);
   CheckBad('+"abc', 0);
-  CheckBad('+IV8193', 0);
-  CheckBad('+IW1', 0);
+  CheckCompile('+a1b', '+A1B');
+  CheckCompile('@sum(total)', '@SUM(TOTAL)');
+  CheckBad('+1abc', 0);
+  CheckBad('+$A', 0);
   CheckBad('abc', 1);
   CheckBad('1 2', 3);
 
@@ -430,6 +431,202 @@ begin
   X.Calc.Recalc;
   CheckStr(Shown(X, 5000, 1), '5000', 'chain of 5000 dependent formulas');
   X.Free;
+end;
+
+{ ---- editing operations ---- }
+function RawAt(S: TSession; r, c: Integer): string;
+begin
+  if S.Sheet.Find(r, c) = nil then Result := '(empty)' else Result := S.Sheet.Find(r, c).Raw;
+end;
+
+procedure TestEditOps;
+var
+  S: TSession;
+  msg: string;
+  i: Integer;
+begin
+  { ---- copy: relative, absolute, mixed ---- }
+  S := TSession.Create;
+  S.Sheet.Put(1, 1, '5');
+  S.Sheet.Put(1, 2, '+A1*2');
+  S.Sheet.Put(1, 3, '+$A$1+$A1+A$1');
+  msg := CopyRange(S.Sheet, NormRange(1, 2, 1, 3), NormRange(2, 2, 2, 2));
+  CheckStr(msg, '', 'copy succeeds');
+  CheckStr(RawAt(S, 2, 2), '+A2*2', 'relative reference shifts with the copy');
+  CheckStr(RawAt(S, 2, 3), '+$A$1+$A2+A$1', 'absolute and mixed references');
+  { a single cell fills the whole target }
+  CopyRange(S.Sheet, NormRange(1, 1, 1, 1), NormRange(5, 4, 7, 5));
+  CheckInt(S.Sheet.Count, 3 + 2 + 6, 'one cell filled six target cells');
+  CheckStr(RawAt(S, 7, 5), '5', 'last target cell');
+  { a row is repeated down the target }
+  CopyRange(S.Sheet, NormRange(1, 1, 1, 2), NormRange(10, 1, 12, 1));
+  CheckStr(RawAt(S, 10, 2), '+A10*2', 'row copy, first row');
+  CheckStr(RawAt(S, 12, 2), '+A12*2', 'row copy, third row');
+  { a column is repeated across the target }
+  S.Sheet.Put(20, 1, '1');
+  S.Sheet.Put(21, 1, '2');
+  CopyRange(S.Sheet, NormRange(20, 1, 21, 1), NormRange(20, 3, 20, 4));
+  CheckStr(RawAt(S, 21, 4), '2', 'column copy across');
+  { a block uses only the target's top left }
+  CopyRange(S.Sheet, NormRange(20, 1, 21, 1), NormRange(30, 1, 40, 5));
+  CheckStr(RawAt(S, 31, 1), '2', 'block copy lands once');
+  Check(S.Sheet.Find(32, 1) = nil, 'block copy is not repeated');
+  { empty source cells clear the target }
+  S.Sheet.Put(50, 2, '9');
+  CopyRange(S.Sheet, NormRange(60, 1, 60, 1), NormRange(50, 2, 50, 2));
+  Check(S.Sheet.Find(50, 2) = nil, 'copying an empty cell clears the target');
+  { copying to overlapping cells works on a snapshot }
+  S.Sheet.Clear;
+  S.Sheet.Put(1, 1, '1');
+  S.Sheet.Put(2, 1, '+A1+1');
+  S.Sheet.Put(3, 1, '+A2+1');
+  CopyRange(S.Sheet, NormRange(1, 1, 3, 1), NormRange(2, 1, 2, 1));
+  CheckStr(RawAt(S, 2, 1), '1', 'overlap: first copied cell');
+  CheckStr(RawAt(S, 3, 1), '+A2+1', 'overlap: second copied cell');
+  CheckStr(RawAt(S, 4, 1), '+A3+1', 'overlap: third copied cell');
+  { copy off the edge of the sheet turns the reference into an error }
+  S.Sheet.Clear;
+  S.Sheet.Put(1, 1, '+IV1');
+  CopyRange(S.Sheet, NormRange(1, 1, 1, 1), NormRange(1, 2, 1, 2));
+  CheckStr(RawAt(S, 1, 2), '+@ERR', 'reference pushed off the sheet');
+  { formats are copied }
+  S.Sheet.Put(5, 5, '3').Fmt := MakeFormat(fkCurrency, 2);
+  CopyRange(S.Sheet, NormRange(5, 5, 5, 5), NormRange(6, 5, 6, 5));
+  CheckStr(FormatTag(S.Sheet.Find(6, 5).Fmt), 'C2', 'copy keeps the format');
+  S.Free;
+
+  { ---- move ---- }
+  S := TSession.Create;
+  S.Sheet.Put(1, 1, '1');
+  S.Sheet.Put(2, 1, '+A1');
+  S.Sheet.Put(1, 2, '+A1+A2');
+  S.Sheet.Put(5, 5, '7');
+  S.Sheet.Put(6, 6, '+E5');
+  msg := MoveRange(S.Sheet, NormRange(1, 1, 2, 1), 1, 3);
+  CheckStr(msg, '', 'move succeeds');
+  Check(S.Sheet.Find(1, 1) = nil, 'source vacated');
+  CheckStr(RawAt(S, 1, 3), '1', 'moved cell');
+  CheckStr(RawAt(S, 2, 3), '+C1', 'moved formula follows the cells it refers to');
+  CheckStr(RawAt(S, 1, 2), '+C1+C2', 'other formulas follow moved cells');
+  { references to overwritten cells become errors }
+  MoveRange(S.Sheet, NormRange(1, 3, 1, 3), 5, 5);
+  CheckStr(RawAt(S, 5, 5), '1', 'moved over an existing cell');
+  CheckStr(RawAt(S, 6, 6), '+@ERR', 'reference to an overwritten cell is an error');
+  CheckStr(RawAt(S, 1, 2), '+E5+C2', 'reference to the moved cell follows it');
+  CheckStr(MoveRange(S.Sheet, NormRange(1, 1, 3, 3), MaxRow, 1), 'Cannot move there: it would leave the worksheet', 'move off the sheet refused');
+  S.Free;
+
+  { ---- insert and delete rows ---- }
+  S := TSession.Create;
+  S.Sheet.Put(1, 1, '1');
+  S.Sheet.Put(2, 1, '2');
+  S.Sheet.Put(3, 1, '+A1+A2');
+  S.Sheet.Put(5, 1, '@SUM(A1..A3)');
+  S.Sheet.SetName('ALL', NormRange(1, 1, 3, 1));
+  S.Sheet.SetName('LAST', NormRange(3, 1, 3, 1));
+  msg := InsertRows(S.Sheet, 2, 2);
+  CheckStr(msg, '', 'insert rows');
+  CheckStr(RawAt(S, 1, 1), '1', 'row above the insert stays');
+  Check(S.Sheet.Find(2, 1) = nil, 'inserted row is empty');
+  CheckStr(RawAt(S, 4, 1), '2', 'row below moved down');
+  CheckStr(RawAt(S, 5, 1), '+A1+A4', 'formula references follow');
+  CheckStr(RawAt(S, 7, 1), '@SUM(A1..A5)', 'a range grows when rows are inserted inside it');
+  Check(S.Sheet.FindName('ALL', S.PendRange) and (S.PendRange.R2 = 5), 'range name grows');
+  Check(S.Sheet.FindName('LAST', S.PendRange) and (S.PendRange.R1 = 5), 'range name moves');
+  msg := DeleteRows(S.Sheet, 2, 3);
+  CheckStr(msg, '', 'delete rows');
+  CheckStr(RawAt(S, 2, 1), '2', 'rows below move up');
+  CheckStr(RawAt(S, 3, 1), '+A1+A2', 'references into the deleted rows move to survivors');
+  CheckStr(RawAt(S, 5, 1), '@SUM(A1..A3)', 'range shrinks');
+  DeleteRows(S.Sheet, 2, 2);
+  CheckStr(RawAt(S, 2, 1), '+A1+@ERR', 'reference to a deleted cell is an error');
+  Check(not S.Sheet.FindName('LAST', S.PendRange) or (S.PendRange.R1 >= 1), 'name still sane');
+  S.Sheet.Put(1, 3, '@SUM(A2..A2)');
+  DeleteRows(S.Sheet, 2, 2);
+  CheckStr(RawAt(S, 1, 3), '@SUM(@ERR)', 'a range that is entirely deleted is an error');
+  S.Free;
+
+  { ---- insert and delete columns ---- }
+  S := TSession.Create;
+  S.Sheet.Put(1, 1, '1');
+  S.Sheet.Put(1, 2, '2');
+  S.Sheet.Put(1, 3, '+A1+B1');
+  S.Sheet.SetColWidth(2, 20);
+  S.Sheet.SetColWidth(3, 12);
+  InsertCols(S.Sheet, 2, 1);
+  CheckStr(RawAt(S, 1, 3), '2', 'column moved right');
+  CheckStr(RawAt(S, 1, 4), '+A1+C1', 'column insert rewrites references');
+  CheckInt(S.Sheet.ColWidth(2), 9, 'inserted column has the default width');
+  CheckInt(S.Sheet.ColWidth(3), 20, 'column widths move with their columns');
+  CheckInt(S.Sheet.ColWidth(4), 12, 'widths shift');
+  DeleteCols(S.Sheet, 2, 2);
+  CheckStr(RawAt(S, 1, 2), '2', 'column moved back');
+  CheckInt(S.Sheet.ColWidth(2), 20, 'width restored on delete');
+  DeleteCols(S.Sheet, 2, 2);
+  CheckStr(RawAt(S, 1, 2), '+A1+@ERR', 'deleting a referenced column');
+  S.Free;
+
+  { insert would push cells off the sheet }
+  S := TSession.Create;
+  S.Sheet.Put(MaxRow, 1, '1');
+  CheckStr(InsertRows(S.Sheet, 1, 1), 'Worksheet full: cannot insert that many rows', 'insert refused when the sheet is full');
+  Check(S.Sheet.Find(MaxRow, 1) <> nil, 'nothing was lost');
+  S.Free;
+
+  { ---- value and transpose ---- }
+  S := TSession.Create;
+  S.Sheet.Put(1, 1, '2');
+  S.Sheet.Put(1, 2, '+A1*3');
+  S.Sheet.Put(1, 3, '''txt');
+  S.Sheet.Put(2, 1, '+"a"&"b"');
+  S.Calc.Recalc;
+  ValuesRange(S.Sheet, NormRange(1, 1, 2, 3), 5, 1);
+  CheckStr(RawAt(S, 5, 2), '6', 'Range Value turns a formula into its value');
+  CheckStr(RawAt(S, 5, 3), '''txt', 'labels copied');
+  CheckStr(RawAt(S, 6, 1), '''ab', 'text result becomes a label');
+  TransposeRange(S.Sheet, NormRange(1, 1, 2, 3), 10, 1);
+  CheckStr(RawAt(S, 10, 1), '2', 'transpose: top left');
+  CheckStr(RawAt(S, 11, 1), '6', 'transpose: row becomes column');
+  CheckStr(RawAt(S, 12, 1), '''txt', 'transpose: third');
+  CheckStr(RawAt(S, 10, 2), '''ab', 'transpose: second row');
+  S.Free;
+
+  { ---- range names in formulas ---- }
+  S := TSession.Create;
+  S.Sheet.Put(1, 1, '4');
+  S.Sheet.Put(2, 1, '6');
+  S.Sheet.Put(3, 1, '10');
+  S.Sheet.SetName('PRICES', NormRange(1, 1, 3, 1));
+  S.Sheet.SetName('FIRST', NormRange(1, 1, 1, 1));
+  S.Sheet.Put(1, 3, '@SUM(prices)');
+  S.Sheet.Put(2, 3, '+first*2');
+  S.Sheet.Put(3, 3, '+prices');
+  S.Sheet.Put(4, 3, '+nothing');
+  S.Calc.Recalc;
+  CheckStr(Shown(S, 1, 3), '20', 'a name as a range argument');
+  CheckStr(Shown(S, 2, 3), '8', 'a single-cell name as a value');
+  CheckStr(Shown(S, 3, 3), 'ERR', 'a multi-cell name outside a function');
+  CheckStr(Shown(S, 4, 3), 'ERR', 'an undefined name');
+  CheckStr(RawAt(S, 1, 3), '@SUM(PRICES)', 'names are stored upper case');
+  S.Sheet.DeleteName('prices');
+  S.Calc.Recalc;
+  CheckStr(Shown(S, 1, 3), 'ERR', 'deleting a name breaks the formulas that use it');
+  S.Sheet.SetName('PRICES', NormRange(1, 1, 2, 1));
+  S.Calc.Recalc;
+  CheckStr(Shown(S, 1, 3), '10', 'defining it again repairs them');
+  Check(IsValidName('Total_1') and IsValidName('_x'), 'valid names');
+  Check(not IsValidName('A1') and not IsValidName('1abc') and not IsValidName('a b') and not IsValidName('ABCDEFGHIJKLMNOP'), 'invalid names');
+  Check(IsValidName('IW1') and IsValidName('A1B'), 'only real cell addresses are rejected');
+  S.Free;
+
+  { performance sanity: inserting a row in a sheet with many formulas }
+  S := TSession.Create;
+  for i := 1 to 3000 do S.Sheet.Put(i, 1, '+A' + IntToStr(i + 1) + '+1');
+  S.Sheet.Put(3001, 1, '1');
+  InsertRows(S.Sheet, 1, 1);
+  CheckStr(RawAt(S, 2, 1), '+A3+1', 'many formulas rewritten');
+  CheckStr(RawAt(S, 3002, 1), '1', 'last cell moved');
+  S.Free;
 end;
 
 { ---- dates (serial numbers, including the 1900 leap-year quirk) ---- }
@@ -823,6 +1020,142 @@ begin
   Feed('+a10'#13);
   Check(S.Calc.Circular, 'circular reference flagged after entry');
 
+
+  { ---- phase 5: editing commands from the keyboard ---- }
+  NewSession;
+  Ctl := TController.Create(S, Cmds);
+  S.Sheet.Put(1, 1, '5');
+  S.Sheet.Put(1, 2, '+A1*2');
+  S.Calc.Recalc;
+  Feed('/c');
+  Check(S.Mode = mPoint, '/Copy asks for the FROM range');
+  Feed('b1'#13);
+  Check(S.Mode = mPoint, '/Copy then asks for the TO range');
+  Feed('b2.b4'#13);
+  Check(S.Mode = mReady, '/Copy done');
+  CheckStr(RawAt(S, 3, 2), '+A3*2', 'copied with adjusted reference');
+  CheckStr(RawAt(S, 4, 2), '+A4*2', 'copied down the target');
+  Ctl.HandleKey(kAltF1 + 3);
+  Check(S.Sheet.Find(2, 2) = nil, 'undo removes the whole copy');
+  Ctl.HandleKey(kAltF1 + 3);
+  CheckStr(RawAt(S, 4, 2), '+A4*2', 'redo brings it back');
+  Ctl.HandleKey(kAltF1 + 3);
+
+  Feed('/m');
+  Feed('a1'#13'd1'#13);
+  CheckStr(RawAt(S, 1, 4), '5', '/Move moved the cell');
+  CheckStr(RawAt(S, 1, 2), '+D1*2', '/Move updated the formula');
+  Ctl.HandleKey(kAltF1 + 3);
+  CheckStr(RawAt(S, 1, 1), '5', 'undo of a move');
+  CheckStr(RawAt(S, 1, 2), '+A1*2', 'undo restores references');
+
+  Feed('/wir');
+  Feed('a2'#13);
+  CheckStr(RawAt(S, 1, 2), '+A1*2', 'row above the insert point is unchanged');
+  S.Sheet.Put(3, 1, '+A1');
+  Feed('/wdr');
+  Feed('a2'#13);
+  CheckStr(RawAt(S, 2, 1), '+A1', 'row deleted');
+  Feed('/wic');
+  Feed('a1'#13);
+  CheckStr(RawAt(S, 1, 2), '5', 'column inserted');
+  CheckStr(RawAt(S, 1, 3), '+B1*2', 'column insert adjusts formulas');
+  Feed('/wdc');
+  Feed('a1'#13);
+  CheckStr(RawAt(S, 1, 1), '5', 'column deleted');
+
+  { range names from the keyboard }
+  Feed('/rnc');
+  Check((S.Mode = mPrompt) and S.PromptIsText, 'name prompt is a text prompt');
+  Feed('rate'#13);
+  Check(S.Mode = mPoint, 'then the range');
+  Feed('a1'#13);
+  Check(S.Sheet.FindName('RATE', S.PendRange), 'name created');
+  Feed('/rnc');
+  Feed('1bad'#13);
+  Check(S.Mode = mReady, 'invalid name refused');
+  CheckStr(S.Msg, 'Invalid range name', 'with a message');
+  Feed('/rnc');
+  Feed('other'#13'b1.b2'#13);
+  Check(S.Sheet.NameCount = 2, 'second name');
+
+  { F3 lists the names while pointing }
+  Feed('/c');
+  Ctl.HandleKey(kF1 + 2);
+  Check(S.Mode = mNames, 'F3 lists names');
+  CheckInt(S.NameChoices.Count, 2, 'both names listed');
+  CheckStr(S.NameChoices[0], 'OTHER', 'names are sorted');
+  Ctl.HandleKey(kRight);
+  Ctl.HandleKey(kEnter);
+  Check(S.Mode = mPoint, 'picking a name accepts the range');
+  Ctl.HandleKey(kEsc);
+  Ctl.HandleKey(kEsc);
+  Ctl.HandleKey(kEsc);
+  Check(S.Mode = mReady, 'esc leaves the prompt');
+
+  { typing a name where a range is expected }
+  Feed('/re');
+  Feed('rate'#13);
+  Check(S.Sheet.Find(1, 1) = nil, 'range erase accepts a name');
+
+  Feed('/rnd');
+  Feed('rate'#13);
+  Check(not S.Sheet.FindName('RATE', S.PendRange), 'name deleted');
+  Feed('/rnd');
+  Feed('rate'#13);
+  CheckStr(S.Msg, 'Range name not found', 'deleting a missing name');
+  Feed('/rnr');
+  CheckInt(S.Sheet.NameCount, 0, 'names reset');
+  Ctl.HandleKey(kAltF1 + 3);
+  CheckInt(S.Sheet.NameCount, 1, 'undo restores the names');
+
+  { names from labels }
+  NewSession;
+  Ctl := TController.Create(S, Cmds);
+  S.Sheet.Put(1, 1, '''Sales');
+  S.Sheet.Put(1, 2, '100');
+  S.Sheet.Put(2, 1, '''Cost');
+  S.Sheet.Put(2, 2, '40');
+  Feed('/rnlr');
+  Feed('a1.a2'#13);
+  Check(S.Sheet.FindName('SALES', S.PendRange) and (S.PendRange.C1 = 2) and (S.PendRange.R1 = 1), 'label names the cell to its right');
+  S.Sheet.Put(4, 1, '+sales-cost');
+  S.Calc.Recalc;
+  CheckStr(Shown(S, 4, 1), '60', 'formula using label-derived names');
+  Feed('/rnt');
+  Feed('d1'#13);
+  CheckStr(RawAt(S, 1, 4), '''COST', 'name table lists names');
+  CheckStr(RawAt(S, 2, 4), '''SALES', 'sorted');
+  CheckStr(RawAt(S, 2, 5), '''B1', 'with their ranges');
+
+  { titles }
+  NewSession;
+  Ctl := TController.Create(S, Cmds);
+  S.CurRow := 3;
+  S.CurCol := 2;
+  S.Normalize;
+  Feed('/wtb');
+  CheckInt(S.Sheet.TitleR2, 2, 'rows above the pointer are titles');
+  CheckInt(S.Sheet.TitleC2, 1, 'columns left of the pointer are titles');
+  CheckInt(S.TopRow, 3, 'scrolling starts at the pointer row');
+  CheckInt(S.ScrollRows, 18, 'two rows are taken by titles');
+  Ctl.HandleKey(kPgDn);
+  CheckInt(S.CurRow, 21, 'page down scrolls the free rows only');
+  CheckInt(S.TopRow, 21, 'titles stay out of the scrolling');
+  Ctl.HandleKey(kUp);
+  CheckInt(S.TopRow, 20, 'scrolls back one row');
+  S.CurRow := 1;
+  S.Normalize;
+  CheckInt(S.TopRow, 20, 'moving into the title rows does not scroll');
+  Feed('/wtc');
+  CheckInt(S.Sheet.TitleR2, 0, 'titles cleared');
+  Ctl.HandleKey(kAltF1 + 3);
+  CheckInt(S.Sheet.TitleR2, 2, 'undo restores titles');
+  S.Sheet.Put(1, 1, '1');
+  S.Sheet.Put(2, 1, '2');
+  InsertRows(S.Sheet, 1, 1);
+  CheckInt(S.Sheet.TitleR2, 3, 'inserting above the titles moves them');
+
   S.Free;
   Cmds.Free;
 end;
@@ -833,6 +1166,7 @@ begin
   TestFormat;
   TestDates;
   TestFormulas;
+  TestEditOps;
   TestMenus;
   TestKeys;
   TestController;

@@ -56,14 +56,27 @@ type
   TCellSource = class
   public
     function CellValue(r, c: Integer): TValue; virtual; abstract;
+    { resolves a range name; False when the name is not defined }
+    function LookupName(const name: string; out r1, c1, r2, c2: Integer): Boolean; virtual; abstract;
     { calls acc.Add for every non-empty cell in the rectangle }
     procedure Accumulate(r1, c1, r2, c2: Integer; acc: TAccumulator); virtual; abstract;
+  end;
+
+  { Rewrites cell references when cells are copied, moved, inserted or
+    deleted.  Return False when the reference no longer points anywhere (it
+    becomes @ERR in the formula text). }
+  TRefMapper = class
+  public
+    function MapCell(var r, c: Integer; absR, absC: Boolean): Boolean; virtual; abstract;
+    { default: map both corners with MapCell, then put them in order }
+    function MapRange(var r1, c1, r2, c2: Integer; absR1, absC1, absR2, absC2: Boolean): Boolean; virtual;
   end;
 
   TNode = class
   public
     function Eval(src: TCellSource): TValue; virtual; abstract;
     function ToText: string; virtual; abstract;
+    function Mapped(m: TRefMapper): string; virtual; abstract;
   end;
 
   TNodeArray = array of TNode;
@@ -77,6 +90,8 @@ type
     constructor Create;
     destructor Destroy; override;
     function Eval(src: TCellSource): TValue;
+    { canonical text with every reference run through the mapper }
+    function MappedText(m: TRefMapper): string;
     property Text: string read FText;    { canonical text, e.g. +A1+B2 }
     property Root: TNode read FRoot;
   end;
@@ -88,6 +103,11 @@ function NAValue: TValue;
 function EmptyValue: TValue;
 
 { True for text that is just a number: 12, -3.5, .5, 1E3 }
+{ Range names: up to 15 letters, digits and underscores, not starting with a
+  digit, and not something that reads as a cell address. }
+function IsValidName(const s: string): Boolean;
+function IsCellAddress(const s: string): Boolean;
+
 function IsNumberLiteral(const s: string; out d: Double): Boolean;
 { Shortest text that reads back as the same value (15 significant digits) }
 function NumToRaw(d: Double): string;
@@ -110,6 +130,7 @@ type
     Value: Double;
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
+    function Mapped(m: TRefMapper): string; override;
   end;
 
   TStrNode = class(TNode)
@@ -117,6 +138,7 @@ type
     Value: string;
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
+    function Mapped(m: TRefMapper): string; override;
   end;
 
   TRefNode = class(TNode)
@@ -125,6 +147,7 @@ type
     AbsRow, AbsCol: Boolean;
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
+    function Mapped(m: TRefMapper): string; override;
   end;
 
   TRangeNode = class(TNode)
@@ -132,6 +155,15 @@ type
     A, B: TRefNode;            { normalised: A is top-left, B bottom-right }
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
+    function Mapped(m: TRefMapper): string; override;
+  end;
+
+  TNameNode = class(TNode)
+  public
+    Name: string;
+    function Eval(src: TCellSource): TValue; override;
+    function ToText: string; override;
+    function Mapped(m: TRefMapper): string; override;
   end;
 
   TParenNode = class(TNode)
@@ -139,6 +171,7 @@ type
     Inner: TNode;
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
+    function Mapped(m: TRefMapper): string; override;
   end;
 
   TUnaryNode = class(TNode)
@@ -147,6 +180,7 @@ type
     Operand: TNode;
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
+    function Mapped(m: TRefMapper): string; override;
   end;
 
   TBinaryNode = class(TNode)
@@ -155,6 +189,7 @@ type
     Left, Right: TNode;
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
+    function Mapped(m: TRefMapper): string; override;
   end;
 
   TFuncProc = function(const args: TNodeArray; src: TCellSource): TValue;
@@ -171,6 +206,7 @@ type
     Args: TNodeArray;
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
+    function Mapped(m: TRefMapper): string; override;
   end;
 
 { ------------------------------------------------------------------ values }
@@ -212,11 +248,30 @@ end;
 
 function IsNumberLiteral(const s: string; out d: Double): Boolean;
 var
+  i, n: Integer;
   code: Integer;
 begin
   d := 0;
   Result := False;
-  if (s = '') or not (s[1] in ['0'..'9', '.', '+', '-']) then exit;
+  i := 1;
+  if (i <= Length(s)) and (s[i] in ['+', '-']) then Inc(i);
+  n := 0;
+  while (i <= Length(s)) and (s[i] in ['0'..'9']) do begin Inc(i); Inc(n); end;
+  if (i <= Length(s)) and (s[i] = '.') then
+  begin
+    Inc(i);
+    while (i <= Length(s)) and (s[i] in ['0'..'9']) do begin Inc(i); Inc(n); end;
+  end;
+  if n = 0 then exit;                              { needs at least one digit before any exponent }
+  if (i <= Length(s)) and (s[i] in ['e', 'E']) then
+  begin
+    Inc(i);
+    if (i <= Length(s)) and (s[i] in ['+', '-']) then Inc(i);
+    n := 0;
+    while (i <= Length(s)) and (s[i] in ['0'..'9']) do begin Inc(i); Inc(n); end;
+    if n = 0 then exit;
+  end;
+  if i <= Length(s) then exit;
   Val(s, d, code);
   Result := code = 0;
 end;
@@ -243,6 +298,12 @@ begin
   end;
 end;
 
+function ColText(c: Integer): string;
+begin
+  if c <= 26 then Result := Chr(64 + c)
+  else Result := Chr(64 + (c - 1) div 26) + Chr(65 + (c - 1) mod 26);
+end;
+
 { ------------------------------------------------------------------ evaluation }
 
 function TNumNode.Eval(src: TCellSource): TValue;
@@ -263,12 +324,6 @@ end;
 function TStrNode.ToText: string;
 begin
   Result := '"' + Value + '"';
-end;
-
-function ColText(c: Integer): string;
-begin
-  if c <= 26 then Result := Chr(64 + c)
-  else Result := Chr(64 + (c - 1) div 26) + Chr(65 + (c - 1) mod 26);
 end;
 
 function TRefNode.Eval(src: TCellSource): TValue;
@@ -426,22 +481,21 @@ begin
   end;                                  { text is ignored }
 end;
 
+function RangeOf(node: TNode; src: TCellSource; out r1, c1, r2, c2: Integer): Boolean; forward;
+
 function FnSum(const args: TNodeArray; src: TCellSource): TValue;
 var
   acc: TSumAcc;
   i: Integer;
   v: TValue;
   d: Double;
-  rg: TRangeNode;
+  r1, c1, r2, c2: Integer;
 begin
   acc := TSumAcc.Create;
   try
     for i := 0 to High(args) do
-      if args[i] is TRangeNode then
-      begin
-        rg := TRangeNode(args[i]);
-        src.Accumulate(rg.A.Row, rg.A.Col, rg.B.Row, rg.B.Col, acc);
-      end
+      if RangeOf(args[i], src, r1, c1, r2, c2) then
+        src.Accumulate(r1, c1, r2, c2, acc)
       else
       begin
         v := args[i].Eval(src);
@@ -524,6 +578,157 @@ begin
   Result := Result + ')';
 end;
 
+
+function RefText(r, c: Integer; absR, absC: Boolean): string;
+begin
+  Result := '';
+  if absC then Result := '$';
+  Result := Result + ColText(c);
+  if absR then Result := Result + '$';
+  Result := Result + IntToStr(r);
+end;
+
+function TRefMapper.MapRange(var r1, c1, r2, c2: Integer; absR1, absC1, absR2, absC2: Boolean): Boolean;
+var
+  t: Integer;
+begin
+  Result := MapCell(r1, c1, absR1, absC1) and MapCell(r2, c2, absR2, absC2);
+  if not Result then exit;
+  if r1 > r2 then begin t := r1; r1 := r2; r2 := t; end;
+  if c1 > c2 then begin t := c1; c1 := c2; c2 := t; end;
+end;
+
+function IsCellAddress(const s: string): Boolean;
+var
+  i, n, c, r: Integer;
+begin
+  Result := False;
+  i := 1;
+  c := 0;
+  n := 0;
+  while (i <= Length(s)) and (UpCase(s[i]) in ['A'..'Z']) do
+  begin
+    c := c * 26 + Ord(UpCase(s[i])) - 64;
+    Inc(i);
+    Inc(n);
+  end;
+  if (n < 1) or (n > 2) or (i > Length(s)) then exit;
+  r := 0;
+  while (i <= Length(s)) and (s[i] in ['0'..'9']) do
+  begin
+    r := r * 10 + Ord(s[i]) - 48;
+    Inc(i);
+    if r > 99999 then exit;
+  end;
+  Result := (i > Length(s)) and (c >= 1) and (c <= 256) and (r >= 1) and (r <= 8192);
+end;
+
+function IsValidName(const s: string): Boolean;
+var
+  i: Integer;
+begin
+  Result := False;
+  if (s = '') or (Length(s) > 15) then exit;
+  if not (UpCase(s[1]) in ['A'..'Z', '_']) then exit;
+  for i := 2 to Length(s) do
+    if not (UpCase(s[i]) in ['A'..'Z', '0'..'9', '_']) then exit;
+  Result := not IsCellAddress(s);
+end;
+
+{ the rectangle an argument stands for, if it is a range or a multi-cell name }
+function RangeOf(node: TNode; src: TCellSource; out r1, c1, r2, c2: Integer): Boolean;
+begin
+  Result := False;
+  if node is TRangeNode then
+  begin
+    r1 := TRangeNode(node).A.Row; c1 := TRangeNode(node).A.Col;
+    r2 := TRangeNode(node).B.Row; c2 := TRangeNode(node).B.Col;
+    Result := True;
+  end
+  else if node is TNameNode then
+    Result := src.LookupName(TNameNode(node).Name, r1, c1, r2, c2);
+end;
+
+function TNameNode.Eval(src: TCellSource): TValue;
+var
+  r1, c1, r2, c2: Integer;
+begin
+  if not src.LookupName(Name, r1, c1, r2, c2) then exit(ErrValue);
+  if (r1 = r2) and (c1 = c2) then
+    Result := src.CellValue(r1, c1)
+  else
+    Result := ErrValue;
+end;
+
+function TNameNode.ToText: string;
+begin
+  Result := Name;
+end;
+
+function TNameNode.Mapped(m: TRefMapper): string;
+begin
+  Result := Name;
+end;
+
+function TNumNode.Mapped(m: TRefMapper): string;
+begin
+  Result := ToText;
+end;
+
+function TStrNode.Mapped(m: TRefMapper): string;
+begin
+  Result := ToText;
+end;
+
+function TRefNode.Mapped(m: TRefMapper): string;
+var
+  r, c: Integer;
+begin
+  r := Row;
+  c := Col;
+  if not m.MapCell(r, c, AbsRow, AbsCol) then exit('@ERR');
+  Result := RefText(r, c, AbsRow, AbsCol);
+end;
+
+function TRangeNode.Mapped(m: TRefMapper): string;
+var
+  r1, c1, r2, c2: Integer;
+begin
+  r1 := A.Row; c1 := A.Col; r2 := B.Row; c2 := B.Col;
+  if not m.MapRange(r1, c1, r2, c2, A.AbsRow, A.AbsCol, B.AbsRow, B.AbsCol) then exit('@ERR');
+  Result := RefText(r1, c1, A.AbsRow, A.AbsCol) + '..' + RefText(r2, c2, B.AbsRow, B.AbsCol);
+end;
+
+function TParenNode.Mapped(m: TRefMapper): string;
+begin
+  Result := '(' + Inner.Mapped(m) + ')';
+end;
+
+function TUnaryNode.Mapped(m: TRefMapper): string;
+begin
+  Result := Op + Operand.Mapped(m);
+end;
+
+function TBinaryNode.Mapped(m: TRefMapper): string;
+begin
+  Result := Left.Mapped(m) + Op + Right.Mapped(m);
+end;
+
+function TFuncNode.Mapped(m: TRefMapper): string;
+var
+  i: Integer;
+begin
+  Result := '@' + Funcs[Def].Name;
+  if (Length(Args) = 0) and (Funcs[Def].MaxArgs = 0) then exit;
+  Result := Result + '(';
+  for i := 0 to High(Args) do
+  begin
+    if i > 0 then Result := Result + ',';
+    Result := Result + Args[i].Mapped(m);
+  end;
+  Result := Result + ')';
+end;
+
 { ------------------------------------------------------------------ parser }
 
 type
@@ -541,6 +746,7 @@ type
     function ParseNumber: TNode;
     function ParseString: TNode;
     function ParseFunc: TNode;
+    function ParseName: TNode;
     function ParseOperand: TNode;
     function ParseOr: TNode;
     function ParseNot: TNode;
@@ -741,6 +947,21 @@ begin
   Result := f;
 end;
 
+function TParser.ParseName: TNode;
+var
+  q: Integer;
+  n: TNameNode;
+begin
+  q := P;
+  while (q <= Length(S)) and (UpCase(S[q]) in ['A'..'Z', '0'..'9', '_']) do Inc(q);
+  if not IsValidName(Copy(S, P, q - P)) then Fail(P);
+  n := TNameNode.Create;
+  New(n);
+  n.Name := UpperCase(Copy(S, P, q - P));
+  P := q;
+  Result := n;
+end;
+
 function TParser.ParseOperand: TNode;
 var
   ref, ref2: TRefNode;
@@ -768,9 +989,16 @@ begin
         Inc(P);
         Result := paren;
       end;
+    '_':
+      Result := ParseName;
     '$', 'A'..'Z', 'a'..'z':
       begin
-        if not TryRef(ref) then Fail(P);
+        if not TryRef(ref) then
+        begin
+          if S[P] = '$' then Fail(P);
+          Result := ParseName;
+          exit;
+        end;
         { range: ref..ref or ref.ref }
         q := P;
         if (q <= Length(S)) and (S[q] = '.') then
@@ -950,6 +1178,11 @@ end;
 function TFormula.Eval(src: TCellSource): TValue;
 begin
   Result := FRoot.Eval(src);
+end;
+
+function TFormula.MappedText(m: TRefMapper): string;
+begin
+  Result := FRoot.Mapped(m);
 end;
 
 function CompileFormula(const text: string; out f: TFormula; out errPos: Integer): Boolean;

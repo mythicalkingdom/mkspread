@@ -31,3 +31,4 @@ after Esc is Alt-letter.  On very slow links, type Esc then wait briefly.
 | Esc, Backspace | POINT | unanchor, then cancel |
 | letters/digits | POINT | type a range such as `A1..C5` instead of pointing |
 | Left, Right | column-width prompt | change the width and preview it |
+| F3 | POINT mode, name prompts | list range names; Left/Right choose, Enter accepts |

@@ -23,3 +23,24 @@ corpus is available, verify each item and move it to "confirmed".
 - Date formats D1-D5 and time formats D6-D9 layouts.
 - General format rounding and when it switches to scientific notation.
 - Undo is enabled by default.
+
+## Editing commands (phase 5)
+- Copy: a single cell fills the whole TO range; a single row is repeated down
+  it; a single column is repeated across it; any other block is copied once at
+  the TO range's top left.  Copying a blank cell clears the target cell.
+- Copy: a relative reference pushed off the edge of the sheet becomes `@ERR`.
+- Move: references to cells that the move overwrote become `@ERR`; references
+  into the moved block follow it.  Range corners follow individually.
+- Delete: a reference to a deleted cell becomes `@ERR`; a range shrinks around
+  deleted rows or columns and becomes `@ERR` only when all of it is deleted.
+  Insert: a range grows when rows or columns are inserted inside it.
+- Range names: up to 15 letters, digits and underscores, not starting with a
+  digit and not a cell address; stored upper case.  A formula using an
+  undefined name shows ERR until the name exists (it is not rejected on entry).
+  A multi-cell name used outside a function is ERR.  A name whose range is
+  entirely deleted disappears.
+- `/Range Value` and `/Range Trans` keep values only; a text result becomes a
+  label; ERR and NA leave the cell empty.
+- Titles: frozen rows start at the top screen row at the moment of the
+  command; deleting rows or columns that include titles clears that title.
+- Not implemented: `/Worksheet Window` (needs a two-pane renderer).

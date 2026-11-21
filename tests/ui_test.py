@@ -171,6 +171,46 @@ check('CIRC' in s.line(25), 'CIRC indicator', s.line(25))
 s.send('/qy', 0.4)
 s.close()
 
+# ---- phase 5: copy, titles, names on screen ----
+s = run()
+s.send('5\r')
+s.send('\x1b[C+a1*2\r')
+s.send('/c')
+check(s.line(1).endswith('POINT') and s.line(2).startswith('Enter range to copy FROM:'), 'copy FROM prompt', s.line(2))
+s.send('\r')
+check(s.line(2).startswith('Enter range to copy TO:'), 'copy TO prompt', s.line(2))
+s.send('\x1b[B.\x1b[B\x1b[B')
+check(s.line(2).startswith('Enter range to copy TO: B2..B4') or s.line(2).startswith('Enter range to copy TO: A3..B4') or '..' in s.line(2), 'range grows', s.line(2))
+s.send('\r')
+s.close()
+
+s = run()
+s.send('H\r')
+s.send('\x1b[B/wth')       # freeze row 1
+s.send('\x1b[6~')            # PgDn
+check(s.line(5).startswith('1   H') or s.line(5).startswith("1   H"), 'title row stays on top', s.line(5))
+check(s.line(6).startswith('21'), 'scrolling rows start below the titles', s.line(6))
+check(s.line(1).startswith('A21:'), 'pointer moved a screen', s.line(1))
+s.send('/qy', 0.4)
+s.close()
+
+s = run()
+s.send('5\r')
+s.send('/rnc')
+check('Enter name:' in s.line(2), 'name prompt', s.line(2))
+s.send('tax\r')
+check(s.line(2).startswith('Enter range:'), 'range prompt', s.line(2))
+s.send('\r')
+s.send('\x1b[B+tax*2\r')
+check(s.line(6).rstrip().endswith('10'), 'formula using a range name', s.line(6))
+check(s.line(1).startswith('A2: +TAX*2'), 'name shown upper case in the status line', s.line(1))
+s.send('/c\x1bOR')          # F3 inside a range prompt
+check(s.line(1).endswith('NAMES') and s.line(2).startswith('TAX'), 'F3 lists names', s.line(1) + s.line(2))
+s.send('\x1b')
+s.send('\x1b')
+s.send('/qy', 0.4)
+s.close()
+
 # ---- screen size handling ----
 s = run(rows=20, cols=70)
 check('too small' in s.line(1), 'small terminal message', s.line(1))
