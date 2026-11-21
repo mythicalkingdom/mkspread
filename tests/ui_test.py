@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""End-to-end screen tests: run the real binary in a pty and inspect the screen."""
+import os, sys, time
+sys.path.insert(0, os.path.dirname(__file__))
+from term import Session
+
+BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'mkspread')
+fails = total = 0
+
+
+def check(cond, what, detail=''):
+    global fails, total
+    total += 1
+    if not cond:
+        fails += 1
+        print('FAIL:', what, detail)
+
+
+def run(args=(), rows=25, cols=80):
+    return Session([BIN] + list(args), rows, cols)
+
+
+# ---- empty start-up screen ----
+s = run()
+check(s.line(1).startswith('A1:'), 'status line shows A1', s.line(1))
+check(s.line(1).endswith('READY'), 'READY indicator', s.line(1))
+check(s.screen.cyan(0)[-5:] == '#####', 'READY is highlighted')
+check(s.screen.cyan(3) == '#' * 80, 'column header row is cyan')
+check(s.line(4).split() == list('ABCDEFGH'), 'default columns A-H', s.line(4))
+check(s.line(5).startswith('1'), 'row 1 on line 5')
+check(s.line(24).startswith('20'), 'row 20 on line 24', s.line(24))
+check(s.line(25)[:3].strip() != '' and '-' in s.line(25)[:10], 'clock on bottom line', s.line(25))
+s.send('/qy', 0.5)
+check(not s.alive, '/QY exits the program')
+s.close()
+
+# ---- demo sheet reproduces the reference screenshot ----
+s = run(['--demo'])
+expect = {
+    1: "K4: [W23] 'Materials",
+    4: "    J           K               L        M               N                O",
+    5: "1         Variable Costs/Unit                           Fixed Costs",
+    6: "2    Description            Cost/Unit         Description",
+    7: "3    ================================         ========================",
+    8: "4    Materials                  $3.26         Plant Operation",
+    12: "8    Freight                    $0.32         Research & Development",
+    13: "9                           ---------",
+    14: "10   Total                     $10.99",
+}
+for n, text in expect.items():
+    got = s.line(n)
+    check(got.startswith(text), 'demo line %d' % n, '\n   got  %r\n   want %r' % (got, text))
+# cursor highlight covers K4 (23 columns starting at screen column 6)
+check(s.screen.cyan(7)[5:28] == '#' * 23 and s.screen.cyan(7)[28] == '.', 'cell cursor highlight', s.screen.cyan(7))
+
+# ---- menus ----
+s.send('/')
+check(s.line(1).endswith('MENU'), 'MENU indicator', s.line(1))
+check(s.line(2).startswith('Worksheet  Range  Copy  Move  File  Print  Graph  Data  System  Quit'), 'menu bar', s.line(2))
+check(s.line(3) == 'Global, Insert, Delete, Column, Erase, Titles, Window, Status, Page', 'submenu list', s.line(3))
+check(s.screen.cyan(1)[:9] == '#########' and s.screen.cyan(1)[9] == '.', 'first item highlighted')
+s.send('\x1b[C')  # right arrow
+check(s.line(3).startswith('Format, Label, Erase, Name'), 'right arrow moves to Range', s.line(3))
+s.send('\r')
+s.send('f')       # Format
+check(s.line(2).startswith('Fixed  Sci  Currency'), 'Range Format menu', s.line(2))
+s.send('\x1b')    # lone Esc backs up one level (must not be taken for Alt-key)
+time.sleep(0.2)
+s.send('')
+check(s.line(2).startswith('Format  Label  Erase'), 'Esc goes back one level', s.line(2))
+s.send('\x1b'); s.send('')
+s.send('\x1b'); s.send('')
+check(s.line(1).endswith('READY'), 'Esc leaves menu', s.line(1))
+s.send('/wgff', 0.4)
+check('[stub] /Worksheet Global Format Fixed' in s.line(25), 'stub message', s.line(25))
+check(s.line(1).endswith('READY'), 'back in READY after command')
+s.send('x')
+check('[stub]' not in s.line(25), 'message clears on next key')
+s.send('\x1b')
+s.send('/qn')
+check(s.alive and s.line(1).endswith('READY'), '/QN stays')
+
+# ---- key mapping ----
+s.send('\x1b[1;5C')  # Ctrl-Right (xterm)
+check(s.line(1).startswith('S4:') or s.line(1).startswith('T4:') or s.line(1)[0] in 'MNOPQRSTU',
+      'Ctrl-Right moves a screen right', s.line(1))
+s.send('\x1bx')      # Alt-X
+check('Alt-X' in s.line(25), 'Alt-letter recognised', s.line(25))
+s.send('\x1bOS')     # F4 (xterm)
+check('F4' in s.line(25), 'F4 recognised', s.line(25))
+s.send('\x1b[1;3S')  # Alt-F4
+check('Alt-F4' in s.line(25), 'Alt-F4 recognised', s.line(25))
+s.send('\x15')       # Ctrl-U equivalent
+check('Alt-F4' in s.line(25), 'Ctrl-U is the Alt-F4 alternative', s.line(25))
+s.send('\x1b[15~')   # F5 = goto
+check('Enter address to go to' in s.line(2), 'F5 goto prompt', s.line(2))
+s.send('b3\r')
+check(s.line(1).startswith('B3:'), 'goto B3', s.line(1))
+s.close()
+
+# ---- entry, including UTF-8 ----
+s = run()
+s.send('café')
+check(s.line(1).endswith('LABEL') and s.line(2).startswith("'café"), 'label entry shows text', s.line(2))
+s.send('\r')
+check(s.line(5).startswith('1   café'), 'UTF-8 label displayed', s.line(5))
+check(s.line(1).startswith("A1: 'café"), 'status shows raw contents', s.line(1))
+s.send('\x1b[B')
+s.send('42\r')
+check(s.line(6).rstrip().endswith('42') and len(s.line(6).rstrip()) == 4 + 9, 'number right aligned in cell', repr(s.line(6)))
+s.send('/qy', 0.4)
+s.close()
+
+# ---- screen size handling ----
+s = run(rows=20, cols=70)
+check('too small' in s.line(1), 'small terminal message', s.line(1))
+s.send('/qy', 0.3)
+s.close()
+s = run(['--expand'], rows=30, cols=100)
+check(s.line(4).split()[-1] == 'L' or len(s.line(4).split()) >= 10, 'expand shows more columns', s.line(4))
+check(s.line(30)[:3].strip() != '' , 'expand uses bottom of tall terminal', s.line(30))
+check(s.line(29).startswith('25'), 'expand shows 25 rows', s.line(29))
+s.send('/qy', 0.3)
+s.close()
+
+# ---- key test mode ----
+s = run(['--keytest'])
+s.send('\x1b[1;5C')
+s.send('\x1b[1;3P')
+s.send('\x1bz')
+text = '\n'.join(s.screen.lines())
+check('Ctrl-Right' in text and 'Alt-F1' in text and 'Alt-Z' in text, 'keytest names keys', text)
+s.send('\x11', 0.4)
+check(not s.alive, 'Ctrl-Q leaves keytest')
+s.close()
+
+print('%d/%d UI checks passed' % (total - fails, total))
+sys.exit(1 if fails else 0)
