@@ -17,3 +17,17 @@ your terminal delivers.
 
 Plain Esc is told apart from Alt-letter by timing: a letter arriving right
 after Esc is Alt-letter.  On very slow links, type Esc then wait briefly.
+
+## Editing keys
+
+| Key | In mode | Meaning |
+|-----|---------|---------|
+| F2 | READY / LABEL / VALUE | edit the cell (or the entry) in EDIT mode |
+| Left, Right, Home, End | EDIT | move within the text |
+| Backspace, Del | EDIT | delete before / at the cursor |
+| Enter, Up, Down | EDIT | accept (arrows also move) |
+| Esc | EDIT / prompts | cancel |
+| `.` | POINT | anchor the range at the pointer |
+| Esc, Backspace | POINT | unanchor, then cancel |
+| letters/digits | POINT | type a range such as `A1..C5` instead of pointing |
+| Left, Right | column-width prompt | change the width and preview it |

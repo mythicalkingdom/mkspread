@@ -55,6 +55,7 @@ var
   buf, t: UnicodeString;
   c, c2, x, w, k, av, hx, hw: Integer;
   cell: TCell;
+  sel: TRange;
   pre: Char;
 
   procedure PutBuf(pos: Integer; const txt: UnicodeString);
@@ -72,13 +73,14 @@ begin
   hx := 0;
   hw := 0;
   x := 1;
+  sel := S.Selection;
   for c := S.LeftCol to rc do
   begin
     w := S.Sheet.ColWidth(c);
-    if (r = S.CurRow) and (c = S.CurCol) then
+    if (r >= sel.R1) and (r <= sel.R2) and (c >= sel.C1) and (c <= sel.C2) then
     begin
-      hx := x;
-      hw := w;
+      if hx = 0 then hx := x;
+      hw := x + w - hx;
     end;
     cell := S.Sheet.Find(r, c);
     if (cell <> nil) and (cell.Raw <> '') then
@@ -117,7 +119,7 @@ begin
       end
       else
       begin
-        t := UTF8Decode(ValueText(cell));
+        t := UTF8Decode(ValueText(cell, S.Sheet, w));
         if Length(t) > w then
         begin
           SetLength(t, w);
@@ -158,6 +160,7 @@ var
   w, h, gridW, gridRows, rc, r, c, x, cx, i: Integer;
   st, mname, es: string;
   cell: TCell;
+  sel: TRange;
 begin
   w := TermWidth;
   h := TermHeight;
@@ -184,15 +187,18 @@ begin
   { line 1: cell status and mode indicator }
   st := ColLetter(S.CurCol) + IntToStr(S.CurRow) + ':';
   cell := S.Sheet.Find(S.CurRow, S.CurCol);
-  if (cell <> nil) and (cell.Fmt >= 0) then st := st + ' (C' + IntToStr(cell.Fmt) + ')';
+  if (cell <> nil) and not cell.Fmt.UseGlobal then st := st + ' (' + FormatTag(cell.Fmt) + ')';
   if S.Sheet.ColWidthIsSet(S.CurCol) then st := st + ' [W' + IntToStr(S.Sheet.ColWidth(S.CurCol)) + ']';
   if cell <> nil then st := st + ' ' + cell.Raw;
   case S.Mode of
     mReady: mname := 'READY';
     mLabel: mname := 'LABEL';
     mValue: mname := 'VALUE';
+    mEdit:  mname := 'EDIT';
     mMenu:  mname := 'MENU';
     mGoto:  mname := 'POINT';
+    mPrompt: mname := 'EDIT';
+    mPoint: mname := 'POINT';
   end;
   TermPut(1, 1, taNormal, PadR(st, w - Length(mname) - 1));
   TermPut(w - Length(mname) + 1, 1, taHi, mname);
@@ -211,11 +217,36 @@ begin
         TermPut(1, 2, taNormal, es);
         cx := Length(UTF8Decode(es)) + 1;
       end;
+    mEdit:
+      begin
+        TermPut(1, 2, taNormal, PadR(S.Entry, w - 1));
+        cx := S.EditPos + 1;
+      end;
     mGoto:
       begin
         es := 'Enter address to go to: ' + S.Entry;
         TermPut(1, 2, taNormal, es);
         cx := Length(es) + 1;
+      end;
+    mPrompt:
+      begin
+        es := S.PromptText + ' ' + S.Entry;
+        TermPut(1, 2, taNormal, es);
+        cx := Length(es) + 1;
+      end;
+    mPoint:
+      begin
+        if S.Typing then
+          es := S.PointText + ' ' + S.Entry
+        else
+        begin
+          sel := S.Selection;
+          es := S.PointText + ' ' + ColLetter(sel.C1) + IntToStr(sel.R1);
+          if (sel.R1 <> sel.R2) or (sel.C1 <> sel.C2) then
+            es := es + '..' + ColLetter(sel.C2) + IntToStr(sel.R2);
+        end;
+        TermPut(1, 2, taNormal, es);
+        if S.Typing then cx := Length(es) + 1;
       end;
   end;
 
@@ -239,6 +270,7 @@ begin
   { bottom line: clock, message, indicators }
   TermPut(1, h, taNormal, UpperCase(FormatDateTime('dd-mmm-yy hh:nn AM/PM', Now)));
   if S.Msg <> '' then TermPut(23, h, taMsg, PadR(S.Msg, 55));
+  if S.HasUndo then TermPut(w - 14, h, taNormal, 'UNDO');
   if S.EndMode then TermPut(w - 5, h, taNormal, 'END');
 
   if cx > 0 then

@@ -24,7 +24,19 @@ interface
 uses sheet, menutree;
 
 type
-  TMode = (mReady, mLabel, mValue, mMenu, mGoto);
+  TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint);
+
+  TSession = class;
+  { A command, or the continuation of a command that asked a question.
+    path is the menu path that started it, e.g. 'Range Format Fixed'. }
+  TCommandProc = procedure(S: TSession; const path: string);
+
+  TRange = record
+    R1, C1, R2, C2: Integer;
+  end;
+
+  { while a numeric prompt is open, Left/Right arrows can nudge a column width }
+  TPromptLive = (plNone, plColumn, plGlobalWidth);
 
   TSession = class
   public
@@ -34,30 +46,74 @@ type
     LeftCol, TopRow: Integer;
     GridRows, GridW: Integer;           { size of the cell area, set by the view }
     Mode: TMode;
-    Entry: string;                      { text being typed (UTF-8) }
+    Entry: string;                      { text being typed or edited (UTF-8) }
+    EditPos: Integer;                   { insertion point in Entry, in characters }
     Msg: string;                        { one-shot message for the bottom line }
     EndMode: Boolean;
     Quitting: Boolean;
+
     { menu navigation: level d shows MenuNodes[d].Kids, highlight MenuIdx[d] }
     MenuDepth: Integer;
     MenuNodes: array[0..15] of TMenuNode;
     MenuIdx: array[0..15] of Integer;
+
+    { numeric prompt }
+    PromptText: string;
+    PromptMin, PromptMax, PromptNum: Integer;
+    PromptCont: TCommandProc;
+    PromptPath: string;
+    PromptLive: TPromptLive;
+    PromptOrigWidth: Integer;
+
+    { range selection (POINT mode) }
+    PointText: string;
+    PointCont: TCommandProc;
+    PointPath: string;
+    Anchored, Typing: Boolean;
+    AnchorR, AnchorC: Integer;
+    OrigRow, OrigCol, OrigTop, OrigLeft: Integer;
+    Range: TRange;                      { result of the last range prompt }
+
+    PendFmt: TCellFormat;               { scratch for multi-step commands }
+
+    { single-level undo }
+    UndoSheet: TSheet;
+    HasUndo: Boolean;
+
     constructor Create;
     destructor Destroy; override;
     function RightColOf(left: Integer): Integer;
     procedure Normalize;
     procedure OpenMenu;
     function MenuPath(upTo: Integer): string;   { "Worksheet Global Format" }
+
+    procedure AskNumber(const text: string; def, lo, hi: Integer;
+                        cont: TCommandProc; const path: string; live: TPromptLive = plNone);
+    procedure AskRange(const text: string; cont: TCommandProc; const path: string);
+    function Selection: TRange;                 { cells to highlight }
+    procedure SaveUndo;                         { call before changing the worksheet }
+    procedure DoUndo;
   end;
+
+function NormRange(r1, c1, r2, c2: Integer): TRange;
 
 implementation
 
-uses menudata;
+uses menudata, SysUtils;
+
+function NormRange(r1, c1, r2, c2: Integer): TRange;
+begin
+  if r1 <= r2 then begin Result.R1 := r1; Result.R2 := r2; end
+  else begin Result.R1 := r2; Result.R2 := r1; end;
+  if c1 <= c2 then begin Result.C1 := c1; Result.C2 := c2; end
+  else begin Result.C1 := c2; Result.C2 := c1; end;
+end;
 
 constructor TSession.Create;
 begin
   inherited Create;
   Sheet := TSheet.Create;
+  UndoSheet := TSheet.Create;
   Menus := BuildMenuTree;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
   GridRows := 20;
@@ -68,6 +124,7 @@ end;
 destructor TSession.Destroy;
 begin
   Menus.Free;
+  UndoSheet.Free;
   Sheet.Free;
   inherited Destroy;
 end;
@@ -117,6 +174,70 @@ begin
   begin
     if j > 0 then Result := Result + ' ';
     Result := Result + MenuNodes[j][MenuIdx[j]].Name;
+  end;
+end;
+
+procedure TSession.AskNumber(const text: string; def, lo, hi: Integer;
+  cont: TCommandProc; const path: string; live: TPromptLive);
+begin
+  Mode := mPrompt;
+  PromptText := text;
+  PromptMin := lo;
+  PromptMax := hi;
+  PromptNum := def;
+  PromptCont := cont;
+  PromptPath := path;
+  PromptLive := live;
+  case live of
+    plColumn: PromptOrigWidth := Sheet.ColWidthSetting(CurCol);
+    plGlobalWidth: PromptOrigWidth := Sheet.GlobalWidth;
+  end;
+  Entry := IntToStr(def);
+  EditPos := Length(Entry);
+end;
+
+procedure TSession.AskRange(const text: string; cont: TCommandProc; const path: string);
+begin
+  Mode := mPoint;
+  PointText := text;
+  PointCont := cont;
+  PointPath := path;
+  Anchored := False;
+  Typing := False;
+  Entry := '';
+  OrigRow := CurRow; OrigCol := CurCol; OrigTop := TopRow; OrigLeft := LeftCol;
+end;
+
+function TSession.Selection: TRange;
+begin
+  if (Mode = mPoint) and Anchored then
+    Result := NormRange(AnchorR, AnchorC, CurRow, CurCol)
+  else
+    Result := NormRange(CurRow, CurCol, CurRow, CurCol);
+end;
+
+procedure TSession.SaveUndo;
+begin
+  UndoSheet.Assign(Sheet);
+  HasUndo := True;
+end;
+
+procedure TSession.DoUndo;
+var
+  tmp: TSheet;
+begin
+  if not HasUndo then
+  begin
+    Msg := 'Nothing to undo';
+    exit;
+  end;
+  tmp := TSheet.Create;
+  try
+    tmp.Assign(Sheet);
+    Sheet.Assign(UndoSheet);
+    UndoSheet.Assign(tmp);       { Undo is itself undoable }
+  finally
+    tmp.Free;
   end;
 end;
 

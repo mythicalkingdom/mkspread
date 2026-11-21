@@ -27,25 +27,58 @@ type
   private
     FS: TSession;
     FCmds: TCommands;
+    FEnd: Boolean;                 { END was active when this key arrived }
     procedure MoveCur(dr, dc: Integer);
     procedure EndJump(dr, dc: Integer);
     procedure BigRight;
     procedure BigLeft;
+    function NavKey(k: Integer): Boolean;
     procedure Ready(k: Integer);
     procedure EntryKey(k: Integer);
+    procedure EditKey(k: Integer);
     procedure GotoKey(k: Integer);
+    procedure PromptKey(k: Integer);
+    procedure PointKey(k: Integer);
     procedure MenuKey(k: Integer);
-    procedure CommitEntry;
+    procedure CommitText(const text: string);
+    procedure StartEdit;
     procedure SelectItem(i: Integer);
     procedure StubKey(const name: string);
+    procedure RestorePromptPreview;
+    procedure PointFinish(accept: Boolean);
   public
     constructor Create(S: TSession; Cmds: TCommands);
     procedure HandleKey(k: Integer);
   end;
 
+{ "A1", "A1..C5", "a1.c5" -> normalized range }
+function ParseRangeText(const s: string; out r: TRange): Boolean;
+
 implementation
 
-uses keys, sheet, cellfmt, menutree, SysUtils;
+uses keys, sheet, cellfmt, menutree, u8edit, SysUtils;
+
+function ParseRangeText(const s: string; out r: TRange): Boolean;
+var
+  p, q, c1, r1, c2, r2: Integer;
+  t: string;
+begin
+  t := Trim(s);
+  p := Pos('.', t);
+  if p = 0 then
+  begin
+    Result := ParseAddr(t, c1, r1);
+    c2 := c1;
+    r2 := r1;
+  end
+  else
+  begin
+    q := p;
+    while (q <= Length(t)) and (t[q] = '.') do Inc(q);
+    Result := ParseAddr(Copy(t, 1, p - 1), c1, r1) and ParseAddr(Copy(t, q, MaxInt), c2, r2);
+  end;
+  if Result then r := NormRange(r1, c1, r2, c2);
+end;
 
 constructor TController.Create(S: TSession; Cmds: TCommands);
 begin
@@ -58,6 +91,8 @@ procedure TController.StubKey(const name: string);
 begin
   FS.Msg := '[stub] ' + name + ' not implemented';
 end;
+
+{ ---------------------------------------------------------------- movement }
 
 procedure TController.MoveCur(dr, dc: Integer);
 begin
@@ -74,9 +109,9 @@ begin
   sh := FS.Sheet;
   r := FS.CurRow;
   c := FS.CurCol;
-  if InBounds(r + dr, c + dc) and (sh.Find(r, c) <> nil) and (sh.Find(r + dr, c + dc) <> nil) then
+  if InBounds(r + dr, c + dc) and sh.NonEmpty(r, c) and sh.NonEmpty(r + dr, c + dc) then
   begin
-    while InBounds(r + dr, c + dc) and (sh.Find(r + dr, c + dc) <> nil) do
+    while InBounds(r + dr, c + dc) and sh.NonEmpty(r + dr, c + dc) do
     begin
       Inc(r, dr);
       Inc(c, dc);
@@ -88,7 +123,7 @@ begin
     begin
       Inc(r, dr);
       Inc(c, dc);
-      if sh.Find(r, c) <> nil then break;
+      if sh.NonEmpty(r, c) then break;
     end;
   end;
   FS.CurRow := r;
@@ -133,30 +168,20 @@ begin
   FS.Normalize;
 end;
 
-procedure TController.Ready(k: Integer);
+{ Cursor movement shared by READY and POINT modes.  True if k was one. }
+function TController.NavKey(k: Integer): Boolean;
 var
-  em: Boolean;
   mr, mc: Integer;
 begin
-  if k = kEnd then
-  begin
-    FS.EndMode := not FS.EndMode;
-    exit;
-  end;
-  em := FS.EndMode;
-  FS.EndMode := False;
-  if (k = Ord('/')) or (k = Ord('<')) then
-  begin
-    FS.OpenMenu;
-    exit;
-  end;
+  Result := True;
   case k of
-    kUp:    if em then EndJump(-1, 0) else MoveCur(-1, 0);
-    kDown:  if em then EndJump(1, 0) else MoveCur(1, 0);
-    kLeft:  if em then EndJump(0, -1) else MoveCur(0, -1);
-    kRight: if em then EndJump(0, 1) else MoveCur(0, 1);
+    kEnd: FS.EndMode := not FS.EndMode;
+    kUp:    if FEnd then EndJump(-1, 0) else MoveCur(-1, 0);
+    kDown:  if FEnd then EndJump(1, 0) else MoveCur(1, 0);
+    kLeft:  if FEnd then EndJump(0, -1) else MoveCur(0, -1);
+    kRight: if FEnd then EndJump(0, 1) else MoveCur(0, 1);
     kHome:
-      if em then
+      if FEnd then
       begin
         FS.Sheet.UsedExtent(mr, mc);
         FS.CurRow := mr;
@@ -187,8 +212,34 @@ begin
       end;
     kTab, kCtrlRight, kCtrlPgDn: BigRight;
     kShiftTab, kCtrlLeft, kCtrlPgUp: BigLeft;
+  else
+    Result := False;
+  end;
+end;
+
+{ ---------------------------------------------------------------- READY }
+
+procedure TController.StartEdit;
+var
+  cell: TCell;
+begin
+  cell := FS.Sheet.Find(FS.CurRow, FS.CurCol);
+  if (cell <> nil) then FS.Entry := cell.Raw else FS.Entry := '';
+  FS.EditPos := U8Len(FS.Entry);
+  FS.Mode := mEdit;
+end;
+
+procedure TController.Ready(k: Integer);
+begin
+  if (k = Ord('/')) or (k = Ord('<')) then
+  begin
+    FS.OpenMenu;
+    exit;
+  end;
+  if NavKey(k) then exit;
+  case k of
     kF1: StubKey('F1 (HELP)');
-    kF1 + 1: StubKey('F2 (EDIT)');
+    kF1 + 1: StartEdit;
     kF1 + 2: StubKey('F3 (NAME)');
     kF1 + 3: StubKey('F4 (ABS)');
     kF1 + 4:
@@ -201,15 +252,14 @@ begin
     kF1 + 7: StubKey('F8 (TABLE)');
     kF1 + 8: StubKey('F9 (CALC)');
     kF1 + 9: StubKey('F10 (GRAPH)');
-    kAltF1 + 3: StubKey('Alt-F4 (UNDO)');
+    kAltF1 + 3: FS.DoUndo;
     kBreak, kEsc, kBackspace: ;
     32..126, 128..kSpecialBase - 1:
       begin
-        if (k < 127) and (Chr(k) in ['0'..'9', '+', '-', '.', '@', '(', '#', '$']) then
+        if (k < 127) and (Chr(k) in ValueStarts) then
           FS.Mode := mValue
         else
           FS.Mode := mLabel;
-        FS.Entry := '';
         FS.Entry := UTF8Encode(WideChar(k));
       end;
   else
@@ -217,51 +267,100 @@ begin
   end;
 end;
 
-procedure TController.CommitEntry;
+{ ---------------------------------------------------------------- entry / edit }
+
+{ Store text typed into the current cell.  First character decides: a label
+  prefix keeps it a label, a number-ish start makes it a value, anything else
+  is a label with the worksheet's default prefix. }
+procedure TController.CommitText(const text: string);
 var
   raw: string;
+  d: Double;
+  code: Integer;
 begin
-  if FS.Entry <> '' then
-  begin
-    raw := FS.Entry;
-    if (FS.Mode = mLabel) and not (raw[1] in LabelPrefixes) then
-      raw := '''' + raw;
-    FS.Sheet.Put(FS.CurRow, FS.CurCol, raw);
-  end;
   FS.Mode := mReady;
-end;
-
-procedure DeleteLastChar(var s: string);
-var
-  n: Integer;
-begin
-  n := Length(s);
-  if n = 0 then exit;
-  while (n > 1) and ((Ord(s[n]) and $C0) = $80) do Dec(n);   { skip UTF-8 continuation bytes }
-  Delete(s, n, MaxInt);
+  if text = '' then exit;
+  raw := text;
+  if raw[1] in LabelPrefixes then
+    { label as typed }
+  else if raw[1] in ValueStarts then
+  begin
+    Val(raw, d, code);
+    if (code = 0) and not (raw[1] in ['$', '#']) then raw := NumToRaw(d);
+  end
+  else
+    raw := FS.Sheet.GlobalLabelPrefix + raw;
+  FS.SaveUndo;
+  FS.Sheet.Put(FS.CurRow, FS.CurCol, raw);
 end;
 
 procedure TController.EntryKey(k: Integer);
+var
+  shown: string;
 begin
   case k of
-    kEnter: CommitEntry;
+    kEnter: CommitText(FS.Entry);
     kEsc, kBreak:
       begin
         FS.Mode := mReady;
         FS.Entry := '';
       end;
-    kBackspace: DeleteLastChar(FS.Entry);
-    kUp:    begin CommitEntry; MoveCur(-1, 0); end;
-    kDown:  begin CommitEntry; MoveCur(1, 0); end;
-    kLeft:  begin CommitEntry; MoveCur(0, -1); end;
-    kRight: begin CommitEntry; MoveCur(0, 1); end;
+    kBackspace: begin
+      FS.EditPos := U8Len(FS.Entry);
+      if FS.EditPos > 0 then U8DeleteAt(FS.Entry, FS.EditPos - 1);
+    end;
+    kF1 + 1:
+      begin
+        { F2: continue the entry in EDIT mode, with the label prefix visible }
+        shown := FS.Entry;
+        if (FS.Mode = mLabel) and not (shown[1] in LabelPrefixes) then
+          shown := FS.Sheet.GlobalLabelPrefix + shown;
+        FS.Entry := shown;
+        FS.EditPos := U8Len(shown);
+        FS.Mode := mEdit;
+      end;
+    kUp:    begin CommitText(FS.Entry); MoveCur(-1, 0); end;
+    kDown:  begin CommitText(FS.Entry); MoveCur(1, 0); end;
+    kLeft:  begin CommitText(FS.Entry); MoveCur(0, -1); end;
+    kRight: begin CommitText(FS.Entry); MoveCur(0, 1); end;
     kPgUp, kPgDn, kHome, kTab, kShiftTab, kCtrlLeft, kCtrlRight:
       begin
-        CommitEntry;
-        Ready(k);
+        CommitText(FS.Entry);
+        NavKey(k);
       end;
     32..126, 128..kSpecialBase - 1:
       if Length(FS.Entry) < 240 then FS.Entry := FS.Entry + UTF8Encode(WideChar(k));
+  end;
+end;
+
+procedure TController.EditKey(k: Integer);
+begin
+  case k of
+    kEnter: CommitText(FS.Entry);
+    kEsc, kBreak:
+      begin
+        FS.Mode := mReady;
+        FS.Entry := '';
+      end;
+    kLeft: if FS.EditPos > 0 then Dec(FS.EditPos);
+    kRight: if FS.EditPos < U8Len(FS.Entry) then Inc(FS.EditPos);
+    kHome: FS.EditPos := 0;
+    kEnd: FS.EditPos := U8Len(FS.Entry);
+    kBackspace:
+      if FS.EditPos > 0 then
+      begin
+        U8DeleteAt(FS.Entry, FS.EditPos - 1);
+        Dec(FS.EditPos);
+      end;
+    kDel: U8DeleteAt(FS.Entry, FS.EditPos);
+    kUp:   begin CommitText(FS.Entry); MoveCur(-1, 0); end;
+    kDown: begin CommitText(FS.Entry); MoveCur(1, 0); end;
+    32..126, 128..kSpecialBase - 1:
+      if Length(FS.Entry) < 240 then
+      begin
+        U8Insert(FS.Entry, FS.EditPos, UTF8Encode(WideChar(k)));
+        Inc(FS.EditPos);
+      end;
   end;
 end;
 
@@ -283,10 +382,141 @@ begin
         FS.Mode := mReady;
       end;
     kEsc, kBreak: FS.Mode := mReady;
-    kBackspace: DeleteLastChar(FS.Entry);
+    kBackspace: if FS.Entry <> '' then Delete(FS.Entry, Length(FS.Entry), 1);
     32..126: if Length(FS.Entry) < 12 then FS.Entry := FS.Entry + Chr(k);
   end;
 end;
+
+{ ---------------------------------------------------------------- prompts }
+
+procedure TController.RestorePromptPreview;
+begin
+  case FS.PromptLive of
+    plColumn: FS.Sheet.SetColWidth(FS.CurCol, FS.PromptOrigWidth);
+    plGlobalWidth: FS.Sheet.GlobalWidth := FS.PromptOrigWidth;
+  end;
+end;
+
+procedure TController.PromptKey(k: Integer);
+var
+  n: Integer;
+begin
+  case k of
+    kEnter:
+      begin
+        n := StrToIntDef(FS.Entry, -1);
+        if (n < FS.PromptMin) or (n > FS.PromptMax) then
+        begin
+          FS.Msg := Format('Value must be between %d and %d', [FS.PromptMin, FS.PromptMax]);
+          exit;
+        end;
+        FS.PromptNum := n;
+        RestorePromptPreview;
+        FS.Mode := mReady;
+        FS.PromptCont(FS, FS.PromptPath);
+      end;
+    kEsc, kBreak:
+      begin
+        RestorePromptPreview;
+        FS.Mode := mReady;
+      end;
+    kBackspace: if FS.Entry <> '' then Delete(FS.Entry, Length(FS.Entry), 1);
+    kLeft, kRight:
+      if FS.PromptLive <> plNone then
+      begin
+        n := StrToIntDef(FS.Entry, FS.PromptMin);
+        if k = kLeft then Dec(n) else Inc(n);
+        if n < FS.PromptMin then n := FS.PromptMin;
+        if n > FS.PromptMax then n := FS.PromptMax;
+        FS.Entry := IntToStr(n);
+        case FS.PromptLive of
+          plColumn: FS.Sheet.SetColWidth(FS.CurCol, n);
+          plGlobalWidth: FS.Sheet.GlobalWidth := n;
+        end;
+      end;
+    Ord('0')..Ord('9'):
+      if Length(FS.Entry) < 4 then FS.Entry := FS.Entry + Chr(k);
+  end;
+end;
+
+procedure TController.PointFinish(accept: Boolean);
+var
+  r: TRange;
+  ok: Boolean;
+begin
+  if FS.Typing then
+    ok := ParseRangeText(FS.Entry, r)
+  else
+  begin
+    r := FS.Selection;
+    ok := True;
+  end;
+  if accept and not ok then
+  begin
+    FS.Msg := 'Invalid cell or range address';
+    exit;
+  end;
+  FS.CurRow := FS.OrigRow;
+  FS.CurCol := FS.OrigCol;
+  FS.TopRow := FS.OrigTop;
+  FS.LeftCol := FS.OrigLeft;
+  FS.Mode := mReady;
+  FS.Anchored := False;
+  FS.Typing := False;
+  if accept then
+  begin
+    FS.Range := r;
+    FS.PointCont(FS, FS.PointPath);
+  end;
+end;
+
+procedure TController.PointKey(k: Integer);
+begin
+  if FS.Typing then
+  begin
+    case k of
+      kEnter: PointFinish(True);
+      kEsc, kBreak: begin FS.Typing := False; FS.Entry := ''; end;
+      kBackspace:
+        begin
+          if FS.Entry <> '' then Delete(FS.Entry, Length(FS.Entry), 1);
+          if FS.Entry = '' then FS.Typing := False;
+        end;
+      32..126: if Length(FS.Entry) < 24 then FS.Entry := FS.Entry + Chr(k);
+    end;
+    exit;
+  end;
+  if NavKey(k) then exit;
+  case k of
+    kEnter: PointFinish(True);
+    Ord('.'):
+      if not FS.Anchored then
+      begin
+        FS.Anchored := True;
+        FS.AnchorR := FS.CurRow;
+        FS.AnchorC := FS.CurCol;
+      end
+      else
+      begin
+        { period again: move the pointer to the opposite corner }
+        FS.Normalize;
+        k := FS.AnchorR; FS.AnchorR := FS.CurRow; FS.CurRow := k;
+        FS.Normalize;
+      end;
+    kEsc:
+      if FS.Anchored then FS.Anchored := False else PointFinish(False);
+    kBackspace:
+      if FS.Anchored then FS.Anchored := False else PointFinish(False);
+    kBreak: PointFinish(False);
+    Ord('A')..Ord('Z'), Ord('a')..Ord('z'), Ord('0')..Ord('9'):
+      begin
+        FS.Typing := True;
+        FS.Entry := Chr(k);
+      end;
+  end;
+end;
+
+{ ---------------------------------------------------------------- menus }
 
 procedure TController.SelectItem(i: Integer);
 var
@@ -334,11 +564,16 @@ procedure TController.HandleKey(k: Integer);
 begin
   if k = kNone then exit;
   FS.Msg := '';
+  FEnd := FS.EndMode;
+  if k <> kEnd then FS.EndMode := False;
   case FS.Mode of
     mReady: Ready(k);
     mLabel, mValue: EntryKey(k);
+    mEdit: EditKey(k);
     mMenu: MenuKey(k);
     mGoto: GotoKey(k);
+    mPrompt: PromptKey(k);
+    mPoint: PointKey(k);
   end;
 end;
 

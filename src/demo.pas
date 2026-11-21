@@ -38,7 +38,7 @@ procedure LoadDemo(S: TSession);
     cell: TCell;
   begin
     cell := S.Sheet.Put(r, c, txt);
-    cell.Fmt := 2;
+    cell.Fmt := MakeFormat(fkCurrency, 2);
     cell.Cache := cache;
   end;
 begin

@@ -24,7 +24,6 @@ interface
 uses session, Generics.Collections;
 
 type
-  TCommandProc = procedure(S: TSession);
   TCommandMap = specialize TDictionary<string, TCommandProc>;
 
   TCommands = class
@@ -42,6 +41,8 @@ type
 procedure RegisterCoreCommands(C: TCommands);
 
 implementation
+
+uses cmdsheet;
 
 constructor TCommands.Create;
 begin
@@ -70,17 +71,17 @@ var
   proc: TCommandProc;
 begin
   if FMap.TryGetValue(path, proc) then
-    proc(S)
+    proc(S, path)
   else
     S.Msg := '[stub] /' + path;
 end;
 
-procedure CmdQuitNo(S: TSession);
+procedure CmdQuitNo(S: TSession; const path: string);
 begin
   { nothing: just return to READY }
 end;
 
-procedure CmdQuitYes(S: TSession);
+procedure CmdQuitYes(S: TSession; const path: string);
 begin
   S.Quitting := True;
 end;
@@ -89,6 +90,7 @@ procedure RegisterCoreCommands(C: TCommands);
 begin
   C.Register('Quit No', @CmdQuitNo);
   C.Register('Quit Yes', @CmdQuitYes);
+  RegisterSheetCommands(C);
 end;
 
 end.
