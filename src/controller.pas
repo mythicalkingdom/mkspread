@@ -54,36 +54,9 @@ type
     procedure HandleKey(k: Integer);
   end;
 
-{ "A1", "A1..C5", "a1.c5" -> normalized range }
-function ParseRangeText(sh: TSheet; const s: string; out r: TRange): Boolean;
-
 implementation
 
-uses keys, cellfmt, formula, menutree, u8edit, SysUtils;
-
-function ParseRangeText(sh: TSheet; const s: string; out r: TRange): Boolean;
-var
-  p, q, c1, r1, c2, r2: Integer;
-  t: string;
-begin
-  t := Trim(s);
-  p := Pos('.', t);
-  if p = 0 then
-  begin
-    { a range name, or a single cell address }
-    if IsValidName(t) and sh.FindName(t, r) then exit(True);
-    Result := ParseAddr(t, c1, r1);
-    c2 := c1;
-    r2 := r1;
-  end
-  else
-  begin
-    q := p;
-    while (q <= Length(t)) and (t[q] = '.') do Inc(q);
-    Result := ParseAddr(Copy(t, 1, p - 1), c1, r1) and ParseAddr(Copy(t, q, MaxInt), c2, r2);
-  end;
-  if Result then r := NormRange(r1, c1, r2, c2);
-end;
+uses keys, cellfmt, formula, menutree, u8edit, cmdfile, SysUtils;
 
 constructor TController.Create(S: TSession; Cmds: TCommands);
 begin
@@ -405,7 +378,9 @@ begin
         FS.PromptCont(FS, FS.PromptPath);
       end;
     kEsc, kBreak: FS.Mode := mReady;
-    kF1 + 2: FS.OpenNameList;
+    kF1 + 2:
+      if FS.PromptFilter <> '' then OpenFileChoices(FS, FS.PromptFilter)
+      else FS.OpenNameList;
   end;
 end;
 
@@ -423,6 +398,13 @@ begin
     kEnter:
       begin
         name := FS.NameChoices[FS.NameIdx];
+        if Assigned(FS.ChoiceCont) then
+        begin
+          FS.Mode := mReady;
+          FS.ChoiceIndex := FS.NameIdx;
+          FS.ChoiceCont(FS, FS.ChoicePath);
+          exit;
+        end;
         FS.Mode := FS.NameReturn;
         if FS.Mode = mPoint then
         begin

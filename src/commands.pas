@@ -42,7 +42,7 @@ procedure RegisterCoreCommands(C: TCommands);
 
 implementation
 
-uses cmdsheet, cmdedit;
+uses cmdsheet, cmdedit, cmdfile;
 
 constructor TCommands.Create;
 begin
@@ -92,6 +92,7 @@ begin
   C.Register('Quit Yes', @CmdQuitYes);
   RegisterSheetCommands(C);
   RegisterEditCommands(C);
+  RegisterFileCommands(C);
 end;
 
 end.

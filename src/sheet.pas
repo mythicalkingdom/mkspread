@@ -132,6 +132,7 @@ type
     function Put(r, c: Integer; const raw: string): TCell;
     procedure Remove(r, c: Integer);
     procedure Clear;                              { cells and column widths }
+    procedure Reset;                              { cells, names and every setting }
     procedure SetLabelAlignment(ch: Char; all: Boolean; r1, c1, r2, c2: Integer);
     { Start recording a change group; the sheet keeps a reference in Journal. }
     function BeginChange: TChangeSet;
@@ -163,8 +164,34 @@ function MakeFormat(k: TFormatKind; dec: Integer): TCellFormat;
 function InBounds(r, c: Integer): Boolean;
 function ColLetter(c: Integer): string;
 function ParseAddr(const s: string; out c, r: Integer): Boolean;
+{ "A1", "A1..C5", "a1.c5" or a range name -> normalised range }
+function ParseRangeText(sh: TSheet; const s: string; out r: TRange): Boolean;
 
 implementation
+
+function ParseRangeText(sh: TSheet; const s: string; out r: TRange): Boolean;
+var
+  p, q, c1, r1, c2, r2: Integer;
+  t: string;
+begin
+  t := Trim(s);
+  p := Pos('.', t);
+  if p = 0 then
+  begin
+    { a range name, or a single cell address }
+    if IsValidName(t) and sh.FindName(t, r) then exit(True);
+    Result := ParseAddr(t, c1, r1);
+    c2 := c1;
+    r2 := r1;
+  end
+  else
+  begin
+    q := p;
+    while (q <= Length(t)) and (t[q] = '.') do Inc(q);
+    Result := ParseAddr(Copy(t, 1, p - 1), c1, r1) and ParseAddr(Copy(t, q, MaxInt), c2, r2);
+  end;
+  if Result then r := NormRange(r1, c1, r2, c2);
+end;
 
 constructor TChangeSet.Create;
 begin
@@ -350,6 +377,22 @@ end;
 
 { Change the prefix of existing labels to ch (repeating labels keep theirs).
   With all=True the rectangle is ignored. }
+procedure TSheet.Reset;
+begin
+  Journal := nil;
+  Clear;
+  FNames.Clear;
+  GlobalWidth := 9;
+  GlobalFmt := MakeFormat(fkGeneral, 0);
+  GlobalLabelPrefix := '''';
+  ZeroDisplay := True;
+  RecalcOrder := roNatural;
+  RecalcManual := False;
+  Iterations := 1;
+  TitleR1 := 0; TitleR2 := 0; TitleC1 := 0; TitleC2 := 0;
+  Changed := True;
+end;
+
 procedure TSheet.SetLabelAlignment(ch: Char; all: Boolean; r1, c1, r2, c2: Integer);
 var
   pair: TCellMap.TDictionaryPair;

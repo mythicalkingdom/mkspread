@@ -1,2 +1,4 @@
 build/*
 !build/.gitkeep
+private-samples/
+__pycache__/

@@ -16,8 +16,8 @@ def check(cond, what, detail=''):
         print('FAIL:', what, detail)
 
 
-def run(args=(), rows=25, cols=80):
-    return Session([BIN] + list(args), rows, cols)
+def run(args=(), rows=25, cols=80, cwd=None):
+    return Session([BIN] + list(args), rows, cols, cwd=cwd)
 
 
 # ---- empty start-up screen ----
@@ -210,6 +210,53 @@ s.send('\x1b')
 s.send('\x1b')
 s.send('/qy', 0.4)
 s.close()
+
+# ---- phase 6: files ----
+import tempfile, shutil
+d = tempfile.mkdtemp(prefix='mkspread_ui_')
+try:
+    s = run(cwd=d)
+    s.send('7\r')
+    s.send('\x1b[B+a1*6\r')
+    s.send('\x1b[B/rfc\r')
+    s.send('\r')
+    s.send('\r')
+    s.send('/fs')
+    check('Enter name of file to save:' in s.line(2), 'save prompt', s.line(2))
+    s.send('sheet\r')
+    check('Saved sheet.WK1' in s.line(25), 'saved message', s.line(25))
+    check(os.path.exists(os.path.join(d, 'sheet.WK1')), 'file written')
+    s.send('/fs\r')
+    check(s.line(1).endswith('NAMES') and s.line(2).startswith('Cancel  Replace'), 'asks before replacing', s.line(1) + s.line(2))
+    s.send('\x1b')
+    s.send('/qy', 0.4)
+    s.close()
+
+    s = run(['sheet.WK1'], cwd=d)
+    check(s.line(5).rstrip().endswith('7'), 'file given on the command line is opened', s.line(5))
+    check(s.line(6).rstrip().endswith('42'), 'its formula is calculated', s.line(6))
+    check(s.line(1).startswith('A3:'), 'pointer where it was saved', s.line(1))
+    s.send('/fr')
+    check('Enter name of file to retrieve:' in s.line(2), 'retrieve prompt', s.line(2))
+    s.send('\x1bOR')
+    check(s.line(1).endswith('NAMES') and s.line(2).startswith('sheet.WK1'), 'F3 lists the files', s.line(1) + s.line(2))
+    s.send('\r')
+    s.send('\r')
+    check(s.line(5).rstrip().endswith('7'), 'retrieve from the list', s.line(5))
+    s.send('/fr')
+    s.send('nothing\r')
+    check('File not found: nothing' in s.line(25), 'missing file', s.line(25))
+    s.send('/qy', 0.4)
+    s.close()
+
+    with open(os.path.join(d, 'bad.wk1'), 'w') as fh:
+        fh.write('not a worksheet')
+    p = os.popen('cd %s && %s bad.wk1 2>&1' % (d, BIN))
+    out = p.read()
+    p.close()
+    check('Not a worksheet file' in out, 'a bad file on the command line is reported', out)
+finally:
+    shutil.rmtree(d, ignore_errors=True)
 
 # ---- screen size handling ----
 s = run(rows=20, cols=70)

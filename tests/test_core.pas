@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, Classes, keys, editops, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
+uses SysUtils, Classes, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
 
 var
   Fails, Total: Integer;
@@ -629,6 +629,471 @@ begin
   S.Free;
 end;
 
+{ ---- character sets, file formats, import, /File ---- }
+function Bytes(const hex: string): TBytes;
+var
+  i: Integer;
+begin
+  SetLength(Result, Length(hex) div 2);
+  for i := 0 to High(Result) do Result[i] := StrToInt('$' + Copy(hex, i * 2 + 1, 2));
+end;
+
+function ToHex(const b: TBytes): string;
+var
+  i: Integer;
+begin
+  Result := '';
+  for i := 0 to High(b) do Result := Result + IntToHex(b[i], 2);
+end;
+
+procedure WriteBytesFile(const fn: string; const b: TBytes);
+var
+  fs: TFileStream;
+begin
+  fs := TFileStream.Create(fn, fmCreate);
+  if Length(b) > 0 then fs.WriteBuffer(b[0], Length(b));
+  fs.Free;
+end;
+
+procedure WriteTextFile(const fn, s: string);
+var
+  fs: TFileStream;
+begin
+  fs := TFileStream.Create(fn, fmCreate);
+  if s <> '' then fs.WriteBuffer(s[1], Length(s));
+  fs.Free;
+end;
+
+procedure TestCharsets;
+begin
+  CheckStr(LicsToUtf8('abc 123'), 'abc 123', 'ASCII is unchanged');
+  CheckStr(LicsToUtf8(#$E9), UTF8Encode(WideChar($E9)), 'LICS e acute');
+  CheckStr(LicsToUtf8(#$D7), UTF8Encode(WideChar($152)), 'LICS has OE at D7, not multiply');
+  CheckStr(LicsToUtf8(#$A4), UTF8Encode(WideChar($201C)), 'LICS A4 is a double quote');
+  CheckStr(LicsToUtf8(#$FF), UTF8Encode(WideChar($FFFD)), 'undefined LICS byte');
+  CheckStr(Utf8ToLics(UTF8Encode(WideChar($E9))), #$E9, 'e acute back to LICS');
+  CheckStr(Utf8ToLics(UTF8Encode(WideChar($152))), #$D7, 'OE back to LICS');
+  CheckStr(Utf8ToLics(UTF8Encode(WideChar($4E2D))), '?', 'no LICS equivalent');
+  CheckStr(Cp437ToUtf8(#$C4), UTF8Encode(WideChar($2500)), 'CP437 box drawing');
+  CheckStr(Cp437ToUtf8(#$82), UTF8Encode(WideChar($E9)), 'CP437 e acute');
+  CheckStr(Utf8ToCp437(UTF8Encode(WideChar($2500))), #$C4, 'box drawing back');
+  Check(IsValidUtf8('plain') and IsValidUtf8(UTF8Encode(WideChar($E9))), 'valid UTF-8');
+  Check(not IsValidUtf8(#$E9'x') and not IsValidUtf8(#$C3), 'invalid UTF-8');
+  CheckStr(DecodeTextBytes(#$82), UTF8Encode(WideChar($E9)), 'unknown bytes are read as CP437');
+  CheckStr(DecodeTextBytes(UTF8Encode(WideChar($E9))), UTF8Encode(WideChar($E9)), 'UTF-8 is kept');
+end;
+
+procedure TestFormatBytes;
+var
+  f: TCellFormat;
+  b: Integer;
+begin
+  CheckInt(FormatToByte(MakeFormat(fkCurrency, 2)), $A2, 'currency 2 (protected) is A2');
+  CheckStr(FormatTag(ByteToFormat($22)), 'C2', 'byte 22 is currency 2');
+  CheckStr(FormatTag(ByteToFormat($F4)), 'D3', 'byte F4 is month-year');
+  CheckStr(FormatTag(ByteToFormat($71)), 'G', 'byte 71 is general');
+  Check(ByteToFormat($FF).UseGlobal and ByteToFormat($7F).UseGlobal, 'special 15 follows the global format');
+  CheckStr(FormatTag(ByteToFormat($C2)), ',2', 'byte C2 is comma 2');
+  CheckStr(FormatTag(ByteToFormat($A0)), 'C0', 'byte A0 is currency 0');
+  CheckInt(FormatToByte(ByteToFormat($C1)), $C1, 'comma 1 round trip');
+  for b := $00 to $FF do
+  begin
+    f := ByteToFormat(b);
+    if f.UseGlobal or ((b shr 4) and 7 in [5, 6]) then continue;
+    if (b and $7F) = FormatToByte(f) and $7F then continue;
+    Inc(Fails);
+    Inc(Total);
+    WriteLn('FAIL: format byte ', IntToHex(b, 2), ' does not round trip');
+    break;
+  end;
+end;
+
+procedure TestRpn;
+var
+  f: TFormula;
+  pos: Integer;
+  txt: string;
+  sh: TSheet;
+begin
+  sh := TSheet.Create;
+  CompileFormula('+A1*2', f, pos);
+  CheckStr(ToHex(EncodeFormula(f, sh, 1, 2)), '01FF80008005' + '0200' + '0B03', 'relative reference and integer constant');
+  f.Free;
+  CompileFormula('@SUM(C4..O4)', f, pos);
+  CheckStr(ToHex(EncodeFormula(f, sh, 4, 16)), '02F3800080FF8000805001' + '03', 'relative range with a count byte');
+  f.Free;
+  CompileFormula('+$A$1+B$2', f, pos);
+  CheckStr(ToHex(EncodeFormula(f, sh, 3, 3)), '010000000001FF8001000903', 'absolute and mixed');
+  f.Free;
+end;
+
+procedure TestRpnDecode;
+var
+  txt: string;
+begin
+  Check(DecodeFormula(Bytes('01008000800FF' + '0'), 1, 1, txt) = False, 'truncated code is refused');
+  Check(DecodeFormula(Bytes('010080FB9F' + '0503020B03'), 9, 4, txt), 'sample formula decodes');
+  CheckStr(txt, '+D4*515', 'sample formula text');
+  Check(DecodeFormula(Bytes('02F38000' + '80FF800080' + '500103'), 4, 16, txt), 'sample range formula decodes');
+  CheckStr(txt, '@SUM(C4..O4)', 'sample range text');
+  Check(not DecodeFormula(Bytes('05010003'), 1, 1, txt) = False, 'integer constant');
+  Check(not DecodeFormula(Bytes('7F03'), 1, 1, txt), 'unknown opcode is refused');
+  Check(not DecodeFormula(Bytes('0903'), 1, 1, txt), 'operator without operands is refused');
+  Check(not DecodeFormula(Bytes('0501000502000003'), 1, 1, txt), 'two values left on the stack is refused');
+end;
+
+function TmpDir: string;
+begin
+  Result := IncludeTrailingPathDelimiter(GetTempDir) + 'mkspread_test_' + IntToStr(GetProcessID);
+  ForceDirectories(Result);
+end;
+
+procedure CleanDir(const d: string);
+var
+  sr: TSearchRec;
+begin
+  if FindFirst(IncludeTrailingPathDelimiter(d) + '*', faAnyFile, sr) = 0 then
+  begin
+    repeat
+      if (sr.Name <> '.') and (sr.Name <> '..') then DeleteFile(IncludeTrailingPathDelimiter(d) + sr.Name);
+    until FindNext(sr) <> 0;
+    FindClose(sr);
+  end;
+  SysUtils.RemoveDir(d);
+end;
+
+procedure TestWk1RoundTrip;
+var
+  A, B: TSession;
+  info: TFileInfo;
+  warn: TStringList;
+  dir, fn, msg: string;
+  i: Integer;
+  cell: TCell;
+  names: array[0..13] of TFormatKind;
+begin
+  dir := TmpDir;
+  fn := dir + '/rt.wk1';
+  A := TSession.Create;
+  B := TSession.Create;
+  warn := TStringList.Create;
+  try
+    A.Sheet.Put(1, 1, '''left');
+    A.Sheet.Put(2, 1, '"right');
+    A.Sheet.Put(3, 1, '^center');
+    A.Sheet.Put(4, 1, '\=');
+    A.Sheet.Put(5, 1, '''caf' + UTF8Encode(WideChar($E9)) + ' ' + UTF8Encode(WideChar($152)));
+    A.Sheet.Put(1, 2, '42');
+    A.Sheet.Put(2, 2, '-7');
+    A.Sheet.Put(3, 2, '3.14159265358979');
+    A.Sheet.Put(4, 2, '123456789012');
+    A.Sheet.Put(5, 2, '0.1');
+    A.Sheet.Put(1, 3, '+B1*2');
+    A.Sheet.Put(2, 3, '@SUM(B1..B5)');
+    A.Sheet.Put(3, 3, '+$B$1+B$2+$B3');
+    A.Sheet.Put(4, 3, '+"x"&A1');
+    A.Sheet.Put(5, 3, '#NOT#(B1>3)#OR#B2<0');
+    A.Sheet.Put(6, 3, '@ROUND(B3,2)');
+    A.Sheet.Put(7, 3, '@PMT(1000,0.01,12)');
+    A.Sheet.Put(8, 3, '@NA');
+    A.Sheet.Put(9, 3, '@ERR');
+    A.Sheet.Put(10, 3, '-(B1+B2)^2');
+    A.Sheet.Put(11, 3, '@SUM(B1,B2,5)');
+    A.Sheet.SetName('PRICES', NormRange(1, 2, 3, 2));
+    A.Sheet.Put(12, 3, '@SUM(prices)');
+    A.Sheet.Put(13, 3, '1/3');
+    A.Sheet.Put(1, 4, '').Fmt := MakeFormat(fkHidden, 0);
+    A.Sheet.Put(2, 4, '5').Fmt := MakeFormat(fkCurrency, 2);
+    A.Sheet.Put(3, 4, '5').Fmt := MakeFormat(fkSci, 3);
+    A.Sheet.Put(4, 4, '5').Fmt := MakeFormat(fkPercent, 1);
+    A.Sheet.Put(5, 4, '5').Fmt := MakeFormat(fkComma, 0);
+    A.Sheet.Put(6, 4, '36526').Fmt := MakeFormat(fkDate, 1);
+    A.Sheet.Put(7, 4, '0.5').Fmt := MakeFormat(fkDate, 7);
+    A.Sheet.Put(8, 4, '3').Fmt := MakeFormat(fkPlusMinus, 0);
+    A.Sheet.Put(9, 4, '3').Fmt := MakeFormat(fkText, 0);
+    A.Sheet.SetColWidth(2, 14);
+    A.Sheet.SetColWidth(5, 3);
+    A.Sheet.GlobalWidth := 11;
+    A.Sheet.GlobalFmt := MakeFormat(fkFixed, 2);
+    A.Sheet.GlobalLabelPrefix := '"';
+    A.Sheet.RecalcOrder := roRowwise;
+    A.Sheet.RecalcManual := True;
+    A.Sheet.Iterations := 4;
+    A.Sheet.TitleR1 := 1; A.Sheet.TitleR2 := 2;
+    A.Sheet.TitleC1 := 1; A.Sheet.TitleC2 := 1;
+    A.Calc.Recalc;
+    FillChar(info, SizeOf(info), 0);
+    info.CursorCol := 3; info.CursorRow := 6; info.LeftCol := 1; info.TopRow := 1;
+    msg := SaveWorksheet(fn, A.Sheet, False, info, warn);
+    CheckStr(msg, '', 'save succeeds');
+    CheckInt(warn.Count, 0, 'save raised no warnings');
+
+    msg := LoadWorksheet(fn, B.Sheet, warn, info);
+    CheckStr(msg, '', 'load succeeds');
+    CheckInt(info.Version, $0406, 'written as release 2');
+    CheckInt(info.CursorCol, 3, 'cursor column kept');
+    CheckInt(info.CursorRow, 6, 'cursor row kept');
+    CheckInt(info.FormulasLost, 0, 'every formula came back');
+    for i := 1 to 5 do
+      CheckStr(B.Sheet.Find(i, 1).Raw, A.Sheet.Find(i, 1).Raw, 'label ' + IntToStr(i));
+    for i := 1 to 5 do
+      CheckStr(B.Sheet.Find(i, 2).Raw, A.Sheet.Find(i, 2).Raw, 'number ' + IntToStr(i));
+    for i := 1 to 13 do
+      if i <> 12 then CheckStr(B.Sheet.Find(i, 3).Raw, A.Sheet.Find(i, 3).Raw, 'formula ' + IntToStr(i));
+    CheckStr(B.Sheet.Find(12, 3).Raw, '@SUM($B$1..$B$3)', 'range names are saved as addresses');
+    B.Calc.Recalc;
+    CheckStr(Shown(B, 1, 3), Shown(A, 1, 3), 'formula value after loading');
+    CheckStr(Shown(B, 4, 3), Shown(A, 4, 3), 'string formula after loading');
+    CheckStr(Shown(B, 7, 3), Shown(A, 7, 3), 'PMT after loading');
+    CheckStr(Shown(B, 8, 3), 'NA', 'NA after loading');
+    CheckStr(Shown(B, 9, 3), 'ERR', 'ERR after loading');
+    for i := 1 to 9 do
+    begin
+      cell := A.Sheet.Find(i, 4);
+      CheckStr(FormatTag(B.Sheet.Find(i, 4).Fmt), FormatTag(cell.Fmt), 'format of row ' + IntToStr(i));
+    end;
+    CheckInt(B.Sheet.ColWidth(2), 14, 'column width');
+    CheckInt(B.Sheet.ColWidth(5), 3, 'second column width');
+    CheckInt(B.Sheet.ColWidth(1), 11, 'global width');
+    CheckStr(FormatTag(B.Sheet.GlobalFmt), 'F2', 'global format');
+    CheckStr(B.Sheet.GlobalLabelPrefix, '"', 'global label prefix');
+    Check(B.Sheet.RecalcOrder = roRowwise, 'recalculation order');
+    Check(B.Sheet.RecalcManual, 'manual recalculation');
+    CheckInt(B.Sheet.Iterations, 4, 'iteration count');
+    CheckInt(B.Sheet.TitleR2, 2, 'title rows');
+    CheckInt(B.Sheet.TitleC2, 1, 'title columns');
+    Check(B.Sheet.FindName('PRICES', B.PendRange) and (B.PendRange.R2 = 3) and (B.PendRange.C1 = 2), 'range name saved');
+
+    { the original release format }
+    msg := SaveWorksheet(dir + '/rt.wks', A.Sheet, True, info, warn);
+    CheckStr(msg, '', 'WKS save');
+    B.Sheet.Reset;
+    msg := LoadWorksheet(dir + '/rt.wks', B.Sheet, warn, info);
+    CheckStr(msg, '', 'WKS load');
+    CheckInt(info.Version, $0404, 'WKS version');
+    CheckStr(B.Sheet.Find(1, 3).Raw, '+B1*2', 'WKS formula');
+    CheckStr(B.Sheet.Find(5, 1).Raw, A.Sheet.Find(5, 1).Raw, 'WKS label');
+
+    { damaged and foreign files }
+    WriteTextFile(dir + '/junk.wk1', 'this is not a worksheet');
+    CheckStr(LoadWorksheet(dir + '/junk.wk1', B.Sheet, nil, info), 'Not a worksheet file', 'junk is refused');
+    Check(B.Sheet.Find(1, 3) <> nil, 'a refused file leaves the sheet alone');
+    WriteBytesFile(dir + '/sym.wk1', Bytes('00000200' + '0504' + '0100' + '0000'));
+    CheckStr(LoadWorksheet(dir + '/sym.wk1', B.Sheet, nil, info), 'Symphony files are not supported', 'Symphony is refused');
+    CheckStr(LoadWorksheet(dir + '/missing.wk1', B.Sheet, nil, info), 'Cannot open missing.wk1', 'missing file');
+    { truncated in the middle of a record: the earlier records still load }
+    WriteBytesFile(dir + '/trunc.wk1', Bytes('0000020006040D000700' + '000000000000' ));
+    warn.Clear;
+    CheckStr(LoadWorksheet(dir + '/trunc.wk1', B.Sheet, warn, info), '', 'truncated file loads what it can');
+    Check(warn.Count > 0, 'and says so');
+    { a formula with an opcode we do not know keeps its value }
+    WriteBytesFile(dir + '/odd.wk1', Bytes('0000020006040E000D00' + '00' + '0000' + '0000' + '0000000000002440' +
+      '10001B00' + '00' + '0000' + '0100' + '0000000000002840' + '0300' + '7F03' + '000000000000000000'));
+    warn.Clear;
+    msg := LoadWorksheet(dir + '/odd.wk1', B.Sheet, warn, info);
+    CheckStr(msg, '', 'odd file loads');
+  finally
+    warn.Free;
+    A.Free;
+    B.Free;
+    CleanDir(dir);
+  end;
+end;
+
+procedure TestImport;
+var
+  S: TSession;
+  dir: string;
+  msg: string;
+begin
+  dir := TmpDir;
+  S := TSession.Create;
+  try
+    WriteTextFile(dir + '/lines.txt', 'first line'#13#10'  second'#10#10'caf' + #$82 + #13#10#26'ignored');
+    CheckStr(ImportLines(S.Sheet, dir + '/lines.txt', 2, 3), '', 'import lines');
+    CheckStr(RawAt(S, 2, 3), '''first line', 'first line is a label');
+    CheckStr(RawAt(S, 3, 3), '''  second', 'spaces are kept');
+    Check(S.Sheet.Find(4, 3) = nil, 'blank line leaves the cell empty');
+    CheckStr(RawAt(S, 5, 3), '''caf' + UTF8Encode(WideChar($E9)), 'CP437 text is converted');
+    Check(S.Sheet.Find(6, 3) = nil, 'text after the DOS end-of-file mark is ignored');
+    S.Sheet.GlobalLabelPrefix := '"';
+    ImportLines(S.Sheet, dir + '/lines.txt', 20, 1);
+    CheckStr(RawAt(S, 20, 1), '"first line', 'lines use the global label prefix');
+
+    WriteTextFile(dir + '/nums.prn', '1 2.5 "name" ' + '''x y'' 7 junk -3,4'#13#10'"q"'#13#10);
+    S.Sheet.Clear;
+    CheckStr(ImportNumbers(S.Sheet, dir + '/nums.prn', 1, 1), '', 'import numbers');
+    CheckStr(RawAt(S, 1, 1), '1', 'first number');
+    CheckStr(RawAt(S, 1, 2), '2.5', 'second number');
+    CheckStr(RawAt(S, 1, 3), '"name', 'quoted text is a label');
+    CheckStr(RawAt(S, 1, 4), '"x y', 'single-quoted text too');
+    CheckStr(RawAt(S, 1, 5), '7', 'number after quoted text');
+    CheckStr(RawAt(S, 1, 6), '-3', 'junk is skipped, comma separates');
+    CheckStr(RawAt(S, 1, 7), '4', 'next number');
+    CheckStr(RawAt(S, 2, 1), '"q', 'second line');
+
+    WriteTextFile(dir + '/data.csv', 'name,qty,price'#13#10'"Smith, J",3,4.5'#13#10'plain,,"12"'#13#10'"say ""hi""",-1,x'#13#10);
+    S.Sheet.Clear;
+    S.Sheet.GlobalLabelPrefix := '''';
+    CheckStr(ImportNumbers(S.Sheet, dir + '/data.csv', 1, 1), '', 'import CSV');
+    CheckStr(RawAt(S, 1, 1), '''name', 'CSV header');
+    CheckStr(RawAt(S, 2, 1), '''Smith, J', 'comma inside quotes');
+    CheckStr(RawAt(S, 2, 2), '3', 'CSV number');
+    CheckStr(RawAt(S, 2, 3), '4.5', 'CSV decimal');
+    Check(S.Sheet.Find(3, 2) = nil, 'empty field leaves the cell empty');
+    CheckStr(RawAt(S, 3, 3), '''12', 'a quoted number stays text');
+    CheckStr(RawAt(S, 4, 1), '''say "hi"', 'doubled quotes');
+    CheckStr(RawAt(S, 4, 3), '''x', 'unquoted text in CSV is a label');
+    msg := ImportNumbers(S.Sheet, dir + '/nothere.csv', 1, 1);
+    CheckStr(msg, 'Cannot open nothere.csv', 'missing import file');
+  finally
+    S.Free;
+    CleanDir(dir);
+  end;
+end;
+
+procedure TestFileCommands;
+var
+  dir, old: string;
+  S2: TSession;
+  Ctl2: TController;
+  Cmds2: TCommands;
+  q: TKeyQueue;
+
+  procedure Go(const keys: string);
+  begin
+    q.PushString(keys);
+    while not q.Empty do Ctl2.HandleKey(q.Pop);
+  end;
+
+begin
+  dir := TmpDir;
+  old := GetCurrentDir;
+  SetCurrentDir(dir);
+  S2 := TSession.Create;
+  Cmds2 := TCommands.Create;
+  RegisterCoreCommands(Cmds2);
+  Ctl2 := TController.Create(S2, Cmds2);
+  q := TKeyQueue.Create;
+  try
+    S2.Sheet.Put(1, 1, '5');
+    S2.Sheet.Put(2, 1, '+A1*3');
+    S2.Sheet.Put(1, 2, '''label');
+    S2.Calc.Recalc;
+
+    Go('/fs');
+    Check((S2.Mode = mPrompt) and S2.PromptIsText, 'save asks for a name');
+    CheckStr(S2.PromptText, 'Enter name of file to save:', 'save prompt text');
+    Go('budget'#13);
+    Check(FileExists(dir + '/budget.WK1'), 'the extension is added');
+    CheckStr(S2.FileName, 'budget.WK1', 'the session remembers the file');
+    CheckStr(S2.Msg, 'Saved budget.WK1', 'saved message');
+
+    { saving over a file asks first }
+    Go('/fs');
+    CheckStr(S2.Entry, 'budget.WK1', 'the prompt offers the current name');
+    Go(#13);
+    Check(S2.Mode = mNames, 'asks whether to replace');
+    CheckStr(S2.NameChoices.CommaText, 'Cancel,Replace', 'cancel or replace');
+    Go(#27);
+    Check(S2.Mode = mReady, 'esc cancels the question');
+    S2.Sheet.Put(3, 1, '99');
+    Go('/fs'#13);
+    Ctl2.HandleKey(kRight);
+    Ctl2.HandleKey(kEnter);
+    Check(S2.Mode = mReady, 'replace saved the file');
+    CheckStr(S2.Msg, 'Saved budget.WK1', 'replaced message');
+
+    { retrieve into a fresh session }
+    S2.Sheet.Reset;
+    S2.Calc.Recalc;
+    Check(S2.Sheet.Count = 0, 'sheet erased');
+    Go('/fr');
+    Go('BUDGET'#13);
+    CheckStr(RawAt(S2, 1, 1), '5', 'retrieved a number');
+    CheckStr(RawAt(S2, 2, 1), '+A1*3', 'retrieved a formula');
+    CheckStr(Shown(S2, 2, 1), '15', 'formula calculated after retrieve');
+    CheckStr(RawAt(S2, 1, 2), '''label', 'retrieved a label');
+    Check(not S2.HasUndo, 'retrieve clears undo');
+    Go('/fr');
+    Go('nothing'#13);
+    CheckStr(S2.Msg, 'File not found: nothing', 'missing file message');
+    Check(S2.Sheet.Count > 0, 'a missing file leaves the sheet alone');
+    WriteTextFile(dir + '/bad.wk1', 'not a worksheet');
+    Go('/fr');
+    Go('bad.wk1'#13);
+    CheckStr(S2.Msg, 'Not a worksheet file', 'bad file message');
+    Check(S2.Sheet.Count > 0, 'a refused file leaves the sheet alone');
+
+    { F3 lists the files }
+    Go('/fr');
+    Go(#0);
+    Ctl2.HandleKey(kF1 + 2);
+    Check(S2.Mode = mNames, 'F3 lists files');
+    CheckStr(S2.NameChoices.CommaText, 'bad.wk1,budget.WK1', 'only worksheet files are listed');
+    Ctl2.HandleKey(kEsc);
+    Ctl2.HandleKey(kEsc);
+
+    { import }
+    WriteTextFile(dir + '/in.txt', 'alpha'#10'beta'#10);
+    S2.CurRow := 10;
+    S2.CurCol := 2;
+    Go('/fit');
+    Go('in.txt'#13);
+    CheckStr(RawAt(S2, 10, 2), '''alpha', 'import text at the pointer');
+    CheckStr(RawAt(S2, 11, 2), '''beta', 'second line');
+    Ctl2.HandleKey(kAltF1 + 3);
+    Check(S2.Sheet.Find(10, 2) = nil, 'undo removes the import');
+
+    { xtract values, then combine }
+    Go('/fxv');
+    Go('part'#13);
+    Check(S2.Mode = mPoint, 'xtract asks for a range');
+    Go('a1.a2'#13);
+    Check(FileExists(dir + '/part.WK1'), 'xtract wrote a file');
+    S2.Sheet.Reset;
+    S2.CurRow := 1; S2.CurCol := 1;
+    Go('/fr');
+    Go('part'#13);
+    CheckStr(RawAt(S2, 2, 1), '15', 'xtract values turned the formula into its value');
+    S2.Sheet.Put(2, 1, '100');
+    Go('/fcaE');
+    Go('part'#13);
+    CheckStr(RawAt(S2, 2, 1), '115', 'combine add adds the numbers');
+    Go('/fcsE');
+    Go('part'#13);
+    CheckStr(RawAt(S2, 2, 1), '100', 'combine subtract subtracts them');
+    S2.Sheet.Put(5, 5, '''keep');
+    S2.CurRow := 5;
+    S2.CurCol := 5;
+    Go('/fccE');
+    Go('part'#13);
+    CheckStr(RawAt(S2, 5, 5), '5', 'combine copy puts the file at the pointer');
+    CheckStr(RawAt(S2, 6, 5), '15', 'second row');
+    Ctl2.HandleKey(kAltF1 + 3);
+    CheckStr(RawAt(S2, 5, 5), '''keep', 'undo of combine');
+
+    { directory, list, erase }
+    Go('/fd');
+    CheckStr(S2.Entry, dir, 'directory prompt shows the current directory');
+    Ctl2.HandleKey(kEsc);
+    Go('/flw');
+    Check(S2.Mode = mNames, 'list shows files');
+    Ctl2.HandleKey(kEsc);
+    Go('/few');
+    Go('part'#13);
+    Check(not FileExists(dir + '/part.WK1'), 'erase deleted the file');
+    CheckStr(S2.Msg, 'Erased part.WK1', 'erase message');
+  finally
+    SetCurrentDir(old);
+    q.Free;
+    Ctl2.Free;
+    Cmds2.Free;
+    S2.Free;
+    CleanDir(dir);
+  end;
+end;
+
 { ---- dates (serial numbers, including the 1900 leap-year quirk) ---- }
 procedure TestDates;
 var
@@ -1167,6 +1632,13 @@ begin
   TestDates;
   TestFormulas;
   TestEditOps;
+  TestCharsets;
+  TestFormatBytes;
+  TestRpn;
+  TestRpnDecode;
+  TestWk1RoundTrip;
+  TestImport;
+  TestFileCommands;
   TestMenus;
   TestKeys;
   TestController;

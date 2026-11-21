@@ -37,6 +37,12 @@ function InsertCols(sh: TSheet; at, count: Integer): string;
 function DeleteRows(sh: TSheet; r1, r2: Integer): string;
 function DeleteCols(sh: TSheet; c1, c2: Integer): string;
 
+{ Copy a range of src into dst with its top left at (toR, toC).  Formulas are
+  shifted like /Copy does; with asValues they are replaced by their values.
+  Column widths of fully copied columns come along when copyWidths is set. }
+function CopyBetween(src: TSheet; const g: TRange; dst: TSheet; toR, toC: Integer;
+                     asValues, copyWidths: Boolean): string;
+
 implementation
 
 uses Classes, SysUtils, formula, cellfmt;
@@ -262,6 +268,60 @@ begin
     rows.Free;
     txt.Free;
     cells.Free;
+  end;
+end;
+
+{ ---------------------------------------------------------------- between sheets }
+
+function CopyBetween(src: TSheet; const g: TRange; dst: TSheet; toR, toC: Integer;
+                     asValues, copyWidths: Boolean): string;
+var
+  r, c, nr, nc: Integer;
+  cell: TCell;
+  m: TCopyMapper;
+  raw: string;
+  d: Double;
+  p: Char;
+  t: string;
+begin
+  Result := '';
+  if (toR + (g.R2 - g.R1) > MaxRow) or (toC + (g.C2 - g.C1) > MaxCol) then
+    exit('Cannot copy there: it would leave the worksheet');
+  if SizeOf(g) > MaxEditCells then exit('Range too large for this version');
+  m := TCopyMapper.Create;
+  try
+    m.DR := toR - g.R1;
+    m.DC := toC - g.C1;
+    for r := g.R1 to g.R2 do
+      for c := g.C1 to g.C2 do
+      begin
+        cell := src.Find(r, c);
+        nr := toR + (r - g.R1);
+        nc := toC + (c - g.C1);
+        if cell = nil then
+        begin
+          dst.Remove(nr, nc);
+          continue;
+        end;
+        raw := cell.Raw;
+        if cell.Formula <> nil then
+        begin
+          if asValues then
+          begin
+            if CellNumber(cell, d) then raw := NumToRaw(d)
+            else if TextOf(cell, p, t) then raw := '''' + t
+            else raw := '';
+          end
+          else
+            raw := MappedRaw(raw, m);
+        end;
+        dst.Put(nr, nc, raw).Fmt := cell.Fmt;
+      end;
+    if copyWidths then
+      for c := g.C1 to g.C2 do
+        if src.ColWidthIsSet(c) then dst.SetColWidth(toC + (c - g.C1), src.ColWidthSetting(c));
+  finally
+    m.Free;
   end;
 end;
 

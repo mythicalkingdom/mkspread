@@ -37,6 +37,8 @@ interface
 uses Classes, SysUtils;
 
 type
+  TRpnWriter = class;
+
   TValKind = (vkNum, vkStr, vkErr, vkNA);
 
   TValue = record
@@ -77,6 +79,7 @@ type
     function Eval(src: TCellSource): TValue; virtual; abstract;
     function ToText: string; virtual; abstract;
     function Mapped(m: TRefMapper): string; virtual; abstract;
+    procedure Emit(w: TRpnWriter); virtual; abstract;
   end;
 
   TNodeArray = array of TNode;
@@ -92,6 +95,7 @@ type
     function Eval(src: TCellSource): TValue;
     { canonical text with every reference run through the mapper }
     function MappedText(m: TRefMapper): string;
+    procedure Emit(w: TRpnWriter);          { the formula as RPN, ending without a return }
     property Text: string read FText;    { canonical text, e.g. +A1+B2 }
     property Root: TNode read FRoot;
   end;
@@ -103,6 +107,31 @@ function NAValue: TValue;
 function EmptyValue: TValue;
 
 { True for text that is just a number: 12, -3.5, .5, 1E3 }
+{ ---- the @function table, for the file formats ---- }
+function FuncCount: Integer;
+function FuncIndexByOpcode(opcode: Integer): Integer;          { -1 if none }
+function FuncName(i: Integer): string;
+function FuncOpcode(i: Integer): Integer;
+function FuncMinArgs(i: Integer): Integer;
+function FuncMaxArgs(i: Integer): Integer;
+function FuncIsList(i: Integer): Boolean;
+function FuncImplemented(i: Integer): Boolean;
+
+{ ---- converting a formula to the file format's reverse Polish code ---- }
+type
+  TRpnWriter = class
+  public
+    { name -> range; False if undefined (the formula then gets @ERR) }
+    function ResolveName(const name: string; out r1, c1, r2, c2: Integer): Boolean; virtual; abstract;
+    procedure PutNumber(d: Double); virtual; abstract;
+    procedure PutString(const s: string); virtual; abstract;
+    procedure PutRef(r, c: Integer; absR, absC: Boolean); virtual; abstract;
+    procedure PutRange(r1, c1, r2, c2: Integer; aR1, aC1, aR2, aC2: Boolean); virtual; abstract;
+    procedure PutOp(opcode: Integer); virtual; abstract;       { operators 8..24 }
+    procedure PutFunc(opcode, argc: Integer; isList: Boolean); virtual; abstract;
+    procedure PutParen; virtual; abstract;
+  end;
+
 { Range names: up to 15 letters, digits and underscores, not starting with a
   digit, and not something that reads as a cell address. }
 function IsValidName(const s: string): Boolean;
@@ -131,6 +160,7 @@ type
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
     function Mapped(m: TRefMapper): string; override;
+    procedure Emit(w: TRpnWriter); override;
   end;
 
   TStrNode = class(TNode)
@@ -139,6 +169,7 @@ type
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
     function Mapped(m: TRefMapper): string; override;
+    procedure Emit(w: TRpnWriter); override;
   end;
 
   TRefNode = class(TNode)
@@ -148,6 +179,7 @@ type
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
     function Mapped(m: TRefMapper): string; override;
+    procedure Emit(w: TRpnWriter); override;
   end;
 
   TRangeNode = class(TNode)
@@ -156,6 +188,7 @@ type
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
     function Mapped(m: TRefMapper): string; override;
+    procedure Emit(w: TRpnWriter); override;
   end;
 
   TNameNode = class(TNode)
@@ -164,6 +197,7 @@ type
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
     function Mapped(m: TRefMapper): string; override;
+    procedure Emit(w: TRpnWriter); override;
   end;
 
   TParenNode = class(TNode)
@@ -172,15 +206,18 @@ type
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
     function Mapped(m: TRefMapper): string; override;
+    procedure Emit(w: TRpnWriter); override;
   end;
 
   TUnaryNode = class(TNode)
   public
     Op: string;                { '+', '-', '#NOT#' }
+    Elide: Boolean;            { leading formula marker: not stored in files }
     Operand: TNode;
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
     function Mapped(m: TRefMapper): string; override;
+    procedure Emit(w: TRpnWriter); override;
   end;
 
   TBinaryNode = class(TNode)
@@ -190,6 +227,7 @@ type
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
     function Mapped(m: TRefMapper): string; override;
+    procedure Emit(w: TRpnWriter); override;
   end;
 
   TFuncProc = function(const args: TNodeArray; src: TCellSource): TValue;
@@ -198,6 +236,8 @@ type
     Name: string;
     MinArgs, MaxArgs: Integer;
     Proc: TFuncProc;
+    Opcode: Integer;           { number in the worksheet file format }
+    IsList: Boolean;           { file stores an argument-count byte }
   end;
 
   TFuncNode = class(TNode)
@@ -207,6 +247,7 @@ type
     function Eval(src: TCellSource): TValue; override;
     function ToText: string; override;
     function Mapped(m: TRefMapper): string; override;
+    procedure Emit(w: TRpnWriter); override;
   end;
 
 { ------------------------------------------------------------------ values }
@@ -279,10 +320,14 @@ end;
 function NumToRaw(d: Double): string;
 var
   fs: TFormatSettings;
+  back: Double;
 begin
   fs := DefaultFormatSettings;
   fs.DecimalSeparator := '.';
   Result := FloatToStrF(d, ffGeneral, 15, 0, fs);
+  { 15 digits are what people type; files can hold doubles that need 17 }
+  if (TryStrToFloat(Result, back, fs)) and (back <> d) then
+    Result := FloatToStrF(d, ffGeneral, 17, 0, fs);
 end;
 
 { numeric view of a value: ok = False means it cannot be used as a number }
@@ -537,16 +582,138 @@ begin
   Result := NumValue(Pi);
 end;
 
+{ numeric value of a scalar argument; False with err set when it cannot be one }
+function NumArg(node: TNode; src: TCellSource; out d: Double; out bad: TValue): Boolean;
+var
+  v: TValue;
+begin
+  d := 0;
+  v := node.Eval(src);
+  if v.Kind = vkErr then begin bad := ErrValue; exit(False); end;
+  if v.Kind = vkNA then begin bad := NAValue; exit(False); end;
+  if not Numeric(v, d) then begin bad := ErrValue; exit(False); end;
+  Result := True;
+end;
+
+function FnRound(const args: TNodeArray; src: TCellSource): TValue;
+var
+  x, n, scale: Double;
+  bad: TValue;
+begin
+  if not NumArg(args[0], src, x, bad) then exit(bad);
+  if not NumArg(args[1], src, n, bad) then exit(bad);
+  n := Trunc(n);
+  if Abs(n) > 300 then exit(ErrValue);
+  scale := Power(10, n);
+  if x >= 0 then Result := NumValue(Int(x * scale + 0.5) / scale)
+  else Result := NumValue(-Int(-x * scale + 0.5) / scale);
+end;
+
+{ payment per period for a loan: principal, interest rate per period, periods }
+function FnPmt(const args: TNodeArray; src: TCellSource): TValue;
+var
+  p, i, n: Double;
+  bad: TValue;
+begin
+  if not NumArg(args[0], src, p, bad) then exit(bad);
+  if not NumArg(args[1], src, i, bad) then exit(bad);
+  if not NumArg(args[2], src, n, bad) then exit(bad);
+  if n <= 0 then exit(ErrValue);
+  if i = 0 then exit(NumValue(p / n));
+  if i <= -1 then exit(ErrValue);
+  Result := NumValue(p * i / (1 - Power(1 + i, -n)));
+end;
+
 const
-  { The full @function library arrives in a later phase; this is the registry
-    it will extend. }
-  Funcs: array[0..5] of TFuncDef = (
-    (Name: 'SUM';   MinArgs: 1; MaxArgs: 255; Proc: @FnSum),
-    (Name: 'NA';    MinArgs: 0; MaxArgs: 0;   Proc: @FnNA),
-    (Name: 'ERR';   MinArgs: 0; MaxArgs: 0;   Proc: @FnErr),
-    (Name: 'TRUE';  MinArgs: 0; MaxArgs: 0;   Proc: @FnTrue),
-    (Name: 'FALSE'; MinArgs: 0; MaxArgs: 0;   Proc: @FnFalse),
-    (Name: 'PI';    MinArgs: 0; MaxArgs: 0;   Proc: @FnPi)
+  { Every 1-2-3 @function the file formats know, with its file opcode.  Proc is
+    nil for the ones not implemented yet: they parse, round-trip through files,
+    and evaluate to ERR until the function library phase fills them in. }
+  Funcs: array[0..84] of TFuncDef = (
+    (Name: 'SUM'; MinArgs: 1; MaxArgs: 255; Proc: @FnSum; Opcode: 80; IsList: True),
+    (Name: 'NA'; MinArgs: 0; MaxArgs: 0; Proc: @FnNA; Opcode: 31; IsList: False),
+    (Name: 'ERR'; MinArgs: 0; MaxArgs: 0; Proc: @FnErr; Opcode: 32; IsList: False),
+    (Name: 'TRUE'; MinArgs: 0; MaxArgs: 0; Proc: @FnTrue; Opcode: 52; IsList: False),
+    (Name: 'FALSE'; MinArgs: 0; MaxArgs: 0; Proc: @FnFalse; Opcode: 51; IsList: False),
+    (Name: 'PI'; MinArgs: 0; MaxArgs: 0; Proc: @FnPi; Opcode: 38; IsList: False),
+    (Name: 'ROUND'; MinArgs: 2; MaxArgs: 2; Proc: @FnRound; Opcode: 63; IsList: False),
+    (Name: 'PMT'; MinArgs: 3; MaxArgs: 3; Proc: @FnPmt; Opcode: 56; IsList: False),
+    (Name: 'ABS'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 33; IsList: False),
+    (Name: 'INT'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 34; IsList: False),
+    (Name: 'SQRT'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 35; IsList: False),
+    (Name: 'LOG'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 36; IsList: False),
+    (Name: 'LN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 37; IsList: False),
+    (Name: 'SIN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 39; IsList: False),
+    (Name: 'COS'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 40; IsList: False),
+    (Name: 'TAN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 41; IsList: False),
+    (Name: 'ATAN2'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 42; IsList: False),
+    (Name: 'ATAN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 43; IsList: False),
+    (Name: 'ASIN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 44; IsList: False),
+    (Name: 'ACOS'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 45; IsList: False),
+    (Name: 'EXP'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 46; IsList: False),
+    (Name: 'MOD'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 47; IsList: False),
+    (Name: 'CHOOSE'; MinArgs: 2; MaxArgs: 255; Proc: nil; Opcode: 48; IsList: True),
+    (Name: 'ISNA'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 49; IsList: False),
+    (Name: 'ISERR'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 50; IsList: False),
+    (Name: 'RAND'; MinArgs: 0; MaxArgs: 0; Proc: nil; Opcode: 53; IsList: False),
+    (Name: 'DATE'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 54; IsList: False),
+    (Name: 'NOW'; MinArgs: 0; MaxArgs: 0; Proc: nil; Opcode: 55; IsList: False),
+    (Name: 'PV'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 57; IsList: False),
+    (Name: 'FV'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 58; IsList: False),
+    (Name: 'IF'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 59; IsList: False),
+    (Name: 'DAY'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 60; IsList: False),
+    (Name: 'MONTH'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 61; IsList: False),
+    (Name: 'YEAR'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 62; IsList: False),
+    (Name: 'TIME'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 64; IsList: False),
+    (Name: 'HOUR'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 65; IsList: False),
+    (Name: 'MINUTE'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 66; IsList: False),
+    (Name: 'SECOND'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 67; IsList: False),
+    (Name: 'ISNUMBER'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 68; IsList: False),
+    (Name: 'ISSTRING'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 69; IsList: False),
+    (Name: 'LENGTH'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 70; IsList: False),
+    (Name: 'VALUE'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 71; IsList: False),
+    (Name: 'STRING'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 72; IsList: False),
+    (Name: 'MID'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 73; IsList: False),
+    (Name: 'CHAR'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 74; IsList: False),
+    (Name: 'CODE'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 75; IsList: False),
+    (Name: 'FIND'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 76; IsList: False),
+    (Name: 'DATEVALUE'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 77; IsList: False),
+    (Name: 'TIMEVALUE'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 78; IsList: False),
+    (Name: 'CELLPOINTER'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 79; IsList: False),
+    (Name: 'AVG'; MinArgs: 1; MaxArgs: 255; Proc: nil; Opcode: 81; IsList: True),
+    (Name: 'COUNT'; MinArgs: 1; MaxArgs: 255; Proc: nil; Opcode: 82; IsList: True),
+    (Name: 'MIN'; MinArgs: 1; MaxArgs: 255; Proc: nil; Opcode: 83; IsList: True),
+    (Name: 'MAX'; MinArgs: 1; MaxArgs: 255; Proc: nil; Opcode: 84; IsList: True),
+    (Name: 'VLOOKUP'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 85; IsList: False),
+    (Name: 'NPV'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 86; IsList: False),
+    (Name: 'VAR'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 87; IsList: False),
+    (Name: 'STD'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 88; IsList: False),
+    (Name: 'IRR'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 89; IsList: False),
+    (Name: 'HLOOKUP'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 90; IsList: False),
+    (Name: 'DSUM'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 91; IsList: False),
+    (Name: 'DAVG'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 92; IsList: False),
+    (Name: 'DCOUNT'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 93; IsList: False),
+    (Name: 'DMIN'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 94; IsList: False),
+    (Name: 'DMAX'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 95; IsList: False),
+    (Name: 'DVAR'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 96; IsList: False),
+    (Name: 'DSTD'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 97; IsList: False),
+    (Name: 'INDEX'; MinArgs: 3; MaxArgs: 3; Proc: nil; Opcode: 98; IsList: False),
+    (Name: 'COLS'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 99; IsList: False),
+    (Name: 'ROWS'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 100; IsList: False),
+    (Name: 'REPEAT'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 101; IsList: False),
+    (Name: 'UPPER'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 102; IsList: False),
+    (Name: 'LOWER'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 103; IsList: False),
+    (Name: 'LEFT'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 104; IsList: False),
+    (Name: 'RIGHT'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 105; IsList: False),
+    (Name: 'REPLACE'; MinArgs: 4; MaxArgs: 4; Proc: nil; Opcode: 106; IsList: False),
+    (Name: 'PROPER'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 107; IsList: False),
+    (Name: 'CELL'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 108; IsList: False),
+    (Name: 'TRIM'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 109; IsList: False),
+    (Name: 'CLEAN'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 110; IsList: False),
+    (Name: 'S'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 111; IsList: False),
+    (Name: 'N'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 112; IsList: False),
+    (Name: 'EXACT'; MinArgs: 2; MaxArgs: 2; Proc: nil; Opcode: 113; IsList: False),
+    (Name: 'CALL'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 114; IsList: False),
+    (Name: 'INDIRECT'; MinArgs: 1; MaxArgs: 1; Proc: nil; Opcode: 115; IsList: False)
   );
 
 function FindFunc(const name: string): Integer;
@@ -560,6 +727,7 @@ end;
 
 function TFuncNode.Eval(src: TCellSource): TValue;
 begin
+  if not Assigned(Funcs[Def].Proc) then exit(ErrValue);     { not implemented yet }
   Result := Funcs[Def].Proc(Args, src);
 end;
 
@@ -727,6 +895,150 @@ begin
     Result := Result + Args[i].Mapped(m);
   end;
   Result := Result + ')';
+end;
+
+
+{ ------------------------------------------------------------------ emit }
+
+function BinaryOpcode(const op: string): Integer;
+begin
+  if op = '+' then Result := 9
+  else if op = '-' then Result := 10
+  else if op = '*' then Result := 11
+  else if op = '/' then Result := 12
+  else if op = '^' then Result := 13
+  else if op = '=' then Result := 14
+  else if op = '<>' then Result := 15
+  else if op = '<=' then Result := 16
+  else if op = '>=' then Result := 17
+  else if op = '<' then Result := 18
+  else if op = '>' then Result := 19
+  else if op = '#AND#' then Result := 20
+  else if op = '#OR#' then Result := 21
+  else if op = '&' then Result := 24
+  else Result := 0;
+end;
+
+procedure TNumNode.Emit(w: TRpnWriter);
+begin
+  w.PutNumber(Value);
+end;
+
+procedure TStrNode.Emit(w: TRpnWriter);
+begin
+  w.PutString(Value);
+end;
+
+procedure TRefNode.Emit(w: TRpnWriter);
+begin
+  w.PutRef(Row, Col, AbsRow, AbsCol);
+end;
+
+procedure TRangeNode.Emit(w: TRpnWriter);
+begin
+  w.PutRange(A.Row, A.Col, B.Row, B.Col, A.AbsRow, A.AbsCol, B.AbsRow, B.AbsCol);
+end;
+
+procedure TNameNode.Emit(w: TRpnWriter);
+var
+  r1, c1, r2, c2: Integer;
+begin
+  if not w.ResolveName(Name, r1, c1, r2, c2) then
+    w.PutFunc(32, 0, False)                 { undefined name: @ERR }
+  else if (r1 = r2) and (c1 = c2) then
+    w.PutRef(r1, c1, True, True)
+  else
+    w.PutRange(r1, c1, r2, c2, True, True, True, True);
+end;
+
+procedure TParenNode.Emit(w: TRpnWriter);
+begin
+  Inner.Emit(w);
+  w.PutParen;
+end;
+
+procedure TUnaryNode.Emit(w: TRpnWriter);
+begin
+  Operand.Emit(w);
+  if Elide then exit;
+  if Op = '-' then w.PutOp(8)
+  else if Op = '+' then w.PutOp(23)
+  else w.PutOp(22);
+end;
+
+procedure TBinaryNode.Emit(w: TRpnWriter);
+begin
+  Left.Emit(w);
+  Right.Emit(w);
+  w.PutOp(BinaryOpcode(Op));
+end;
+
+procedure TFuncNode.Emit(w: TRpnWriter);
+var
+  i: Integer;
+begin
+  for i := 0 to High(Args) do Args[i].Emit(w);
+  w.PutFunc(Funcs[Def].Opcode, Length(Args), Funcs[Def].IsList);
+end;
+
+procedure TFormula.Emit(w: TRpnWriter);
+var
+  lead: TNode;
+begin
+  { a formula typed +A1*2 is stored without the leading +, which only marks
+    "this is a formula" }
+  lead := FRoot;
+  while lead is TBinaryNode do lead := TBinaryNode(lead).Left;
+  if (lead is TUnaryNode) and (TUnaryNode(lead).Op = '+') then TUnaryNode(lead).Elide := True;
+  try
+    FRoot.Emit(w);
+  finally
+    if (lead is TUnaryNode) then TUnaryNode(lead).Elide := False;
+  end;
+end;
+
+function FuncCount: Integer;
+begin
+  Result := Length(Funcs);
+end;
+
+function FuncIndexByOpcode(opcode: Integer): Integer;
+var
+  i: Integer;
+begin
+  for i := 0 to High(Funcs) do
+    if Funcs[i].Opcode = opcode then exit(i);
+  Result := -1;
+end;
+
+function FuncName(i: Integer): string;
+begin
+  Result := Funcs[i].Name;
+end;
+
+function FuncOpcode(i: Integer): Integer;
+begin
+  Result := Funcs[i].Opcode;
+end;
+
+function FuncMinArgs(i: Integer): Integer;
+begin
+  Result := Funcs[i].MinArgs;
+end;
+
+function FuncMaxArgs(i: Integer): Integer;
+begin
+  Result := Funcs[i].MaxArgs;
+end;
+
+function FuncIsList(i: Integer): Boolean;
+begin
+  Result := Funcs[i].IsList;
+end;
+
+function FuncImplemented(i: Integer): Boolean;
+begin
+  Result := Assigned(Funcs[i].Proc);
 end;
 
 { ------------------------------------------------------------------ parser }

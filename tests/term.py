@@ -110,10 +110,12 @@ class Screen:
 
 
 class Session:
-    def __init__(self, argv, rows=25, cols=80, term='xterm'):
+    def __init__(self, argv, rows=25, cols=80, term='xterm', cwd=None):
         self.screen = Screen(rows, cols)
         pid, fd = pty.fork()
         if pid == 0:
+            if cwd:
+                os.chdir(cwd)
             os.environ['TERM'] = term
             os.environ['LANG'] = 'C.UTF-8'
             os.environ['LC_ALL'] = 'C.UTF-8'

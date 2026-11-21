@@ -281,7 +281,7 @@ begin
           else TermPut(x, 2, taNormal, S.NameChoices[i]);
           Inc(x, Length(S.NameChoices[i]) + 2);
         end;
-        if S.Sheet.FindName(S.NameChoices[S.NameIdx], sel) then
+        if S.ChoiceIsName and S.Sheet.FindName(S.NameChoices[S.NameIdx], sel) then
         begin
           es := ColLetter(sel.C1) + IntToStr(sel.R1);
           if (sel.R1 <> sel.R2) or (sel.C1 <> sel.C2) then

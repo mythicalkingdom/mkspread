@@ -68,6 +68,12 @@ type
     NameChoices: TStringList;
     NameIdx: Integer;
     NameReturn: TMode;                  { mode to go back to }
+    ChoiceIsName: Boolean;              { the choices are range names }
+    ChoiceCont: TCommandProc;           { called when a choice is made (nil: just pick) }
+    ChoicePath: string;
+    ChoiceIndex: Integer;
+    PromptFilter: string;               { text prompt for a file: patterns for F3 }
+    FileName: string;                   { the file last retrieved or saved }
 
     { range selection (POINT mode) }
     PointText: string;
@@ -103,6 +109,10 @@ type
                         cont: TCommandProc; const path: string; live: TPromptLive = plNone);
     procedure AskText(const text, def: string; cont: TCommandProc; const path: string);
     function OpenNameList: Boolean;     { False when there are no names }
+    { A one-line list to choose from; cont runs with ChoiceIndex set. }
+    procedure AskChoice(const items: array of string; cont: TCommandProc; const path: string);
+    procedure ShowChoices(items: TStrings; returnTo: TMode);
+    procedure ForgetUndo;
     procedure AskRange(const text: string; cont: TCommandProc; const path: string);
     function Selection: TRange;                 { cells to highlight }
     procedure SaveUndo;                         { call before changing the worksheet }
@@ -265,6 +275,7 @@ begin
   PromptPath := path;
   PromptLive := plNone;
   PromptIsText := True;
+  PromptFilter := '';
   Entry := def;
   EditPos := U8Len(def);
 end;
@@ -280,7 +291,40 @@ begin
   end;
   NameReturn := Mode;
   NameIdx := 0;
+  ChoiceIsName := True;
+  ChoiceCont := nil;
   Mode := mNames;
+end;
+
+procedure TSession.AskChoice(const items: array of string; cont: TCommandProc; const path: string);
+var
+  i: Integer;
+begin
+  NameChoices.Clear;
+  for i := 0 to High(items) do NameChoices.Add(items[i]);
+  NameReturn := mReady;
+  NameIdx := 0;
+  ChoiceIsName := False;
+  ChoiceCont := cont;
+  ChoicePath := path;
+  Mode := mNames;
+end;
+
+procedure TSession.ShowChoices(items: TStrings; returnTo: TMode);
+begin
+  NameChoices.Assign(items);
+  NameReturn := returnTo;
+  NameIdx := 0;
+  ChoiceIsName := False;
+  ChoiceCont := nil;
+  Mode := mNames;
+end;
+
+procedure TSession.ForgetUndo;
+begin
+  UndoSet.Free;
+  UndoSet := nil;
+  HasUndo := False;
 end;
 
 procedure TSession.AskRange(const text: string; cont: TCommandProc; const path: string);

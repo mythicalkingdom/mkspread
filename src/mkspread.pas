@@ -17,14 +17,14 @@
 program mkspread;
 {$mode objfpc}{$H+}
 
-uses SysUtils, keys, terminal, session, commands, controller, view, demo, keytest;
+uses SysUtils, keys, terminal, session, commands, controller, view, demo, keytest, cmdfile;
 
 const
-  Version = '0.2 (phase 2: structure and terminal layer; all commands are stubs)';
+  Version = '0.6 (phase 6: files)';
 
 procedure Usage;
 begin
-  WriteLn('Usage: mkspread [options]');
+  WriteLn('Usage: mkspread [options] [file.wk1]');
   WriteLn('  --demo       start with the sample worksheet');
   WriteLn('  --expand     use the whole terminal instead of 80x25');
   WriteLn('  --keytest    show how the terminal''s keys are received');
@@ -41,6 +41,7 @@ var
   i: Integer;
   opt: string;
   doDemo, doKeyTest: Boolean;
+  startFile, loadMsg: string;
   k: Integer;
 
 begin
@@ -55,7 +56,13 @@ begin
     else if opt = '--keytest' then doKeyTest := True
     else if opt = '--version' then begin WriteLn('mkspread ', Version); Halt(0); end
     else if (opt = '--help') or (opt = '-h') then begin Usage; Halt(0); end
-    else begin WriteLn('mkspread: unknown option ', ParamStr(i)); Usage; Halt(2); end;
+    else if (Length(opt) > 0) and (opt[1] = '-') then
+    begin
+      WriteLn('mkspread: unknown option ', ParamStr(i));
+      Usage;
+      Halt(2);
+    end
+    else startFile := ParamStr(i);
   end;
 
   S := TSession.Create;
@@ -64,6 +71,15 @@ begin
   Ctl := TController.Create(S, Cmds);
   Queue := TKeyQueue.Create;
   if doDemo then LoadDemo(S);
+  if startFile <> '' then
+  begin
+    loadMsg := RetrieveFile(S, startFile);
+    if loadMsg <> '' then
+    begin
+      WriteLn('mkspread: ', loadMsg);
+      Halt(1);
+    end;
+  end;
 
   TermInit;
   try

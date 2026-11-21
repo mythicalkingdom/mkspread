@@ -44,3 +44,40 @@ corpus is available, verify each item and move it to "confirmed".
 - Titles: frozen rows start at the top screen row at the moment of the
   command; deleting rows or columns that include titles clears that title.
 - Not implemented: `/Worksheet Window` (needs a two-pane renderer).
+
+## Files (phase 6)
+Confirmed against 22 real release 2 files: BOF `0604`; record layouts for cells,
+column widths, titles, window, labels; the format byte; relative references
+(bit 15 set = relative, low 8 bits of a column / 13 of a row = signed offset
+from the formula's cell); a leading `+` is not stored; `@SUM`, `@ROUND`, `@PMT`
+opcodes; 543 formulas decode, re-encode to identical bytes and recalculate to
+the stored values.
+
+Assumed, not yet checked against real files:
+- Files this program writes have not been opened by the original program.
+  Optional records (print setup, graph, header, footer, 0x96) are not written.
+- The protection bit is always written set (the default); protection is not
+  tracked, so "unprotected" cells lose that flag on load.
+- Global zero display, `/Range Prot` and similar settings are not saved.
+- Range names used in formulas are written as the addresses they stand for
+  (the format has no name token); on reading they stay addresses.
+- Formulas that produce text are written with a STRING (0x33) record after the
+  FORMULA record, and read back the same way.
+- Function opcode numbers other than 56, 63 and 80 come from the 1985 addendum;
+  argument counts of fixed-argument functions are my reading of the function
+  definitions, `@CHOOSE` is treated as a list function and `@VAR`/`@STD` as
+  one-argument functions.  A formula that does not decode cleanly is kept as
+  its stored value, with a warning.
+- `.WKS` (original format) is read and written with the same record layouts;
+  only the BOF and the 31-byte WINDOW record differ.
+- A range stored with its corners in the "wrong" order (`D34..C36`) is read as
+  `C34..D36` and written back that way.
+- Whole numbers are written as INTEGER records when they fit in 16 bits; some
+  files store the same numbers as NUMBER records.  Both read back the same.
+- Text import: a DOS end-of-file mark ends the text; text that is not valid
+  UTF-8 is read as code page 437.  In the classic "Numbers" import unquoted
+  non-numeric text is skipped; for `.CSV` files every field is imported.
+- `/File Combine` copies non-blank cells only; Add and Subtract change only
+  numeric cells and leave labels alone.
+- `/File Xtract` puts the extracted range at A1 and copies formulas like
+  `/Copy` does.
