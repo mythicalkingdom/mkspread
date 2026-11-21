@@ -9,7 +9,7 @@ data entry, EDIT mode (F2), all cell formats (Fixed, Sci, Currency, Comma,
 General, +/-, Percent, Date/Time, Text, Hidden), `/Worksheet Global` Format,
 Label-Prefix, Column-Width and Zero, `/Worksheet Column`, `/Worksheet Erase`,
 `/Range Format`, `/Range Label`, `/Range Erase`, range selection in POINT mode,
-and single-level Undo (Alt-F4 or Ctrl-U).  Every other menu command is still a
+and single-level Undo (Alt-F4 or Ctrl-U, recorded as a change journal).  Every other menu command is still a
 stub, and formulas are stored but not yet calculated.
 
     make          build to build/mkspread

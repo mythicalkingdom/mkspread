@@ -76,8 +76,8 @@ type
 
     PendFmt: TCellFormat;               { scratch for multi-step commands }
 
-    { single-level undo }
-    UndoSheet: TSheet;
+    { single-level undo: a journal of what the last command changed }
+    UndoSet: TChangeSet;
     HasUndo: Boolean;
 
     constructor Create;
@@ -92,6 +92,7 @@ type
     procedure AskRange(const text: string; cont: TCommandProc; const path: string);
     function Selection: TRange;                 { cells to highlight }
     procedure SaveUndo;                         { call before changing the worksheet }
+    procedure EndChange;                        { the command is done; stop recording }
     procedure DoUndo;
   end;
 
@@ -113,7 +114,6 @@ constructor TSession.Create;
 begin
   inherited Create;
   Sheet := TSheet.Create;
-  UndoSheet := TSheet.Create;
   Menus := BuildMenuTree;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
   GridRows := 20;
@@ -124,7 +124,7 @@ end;
 destructor TSession.Destroy;
 begin
   Menus.Free;
-  UndoSheet.Free;
+  UndoSet.Free;
   Sheet.Free;
   inherited Destroy;
 end;
@@ -218,27 +218,28 @@ end;
 
 procedure TSession.SaveUndo;
 begin
-  UndoSheet.Assign(Sheet);
+  UndoSet.Free;                  { single level: the previous change is forgotten }
+  UndoSet := Sheet.BeginChange;
   HasUndo := True;
+end;
+
+procedure TSession.EndChange;
+begin
+  Sheet.Journal := nil;
 end;
 
 procedure TSession.DoUndo;
 var
-  tmp: TSheet;
+  inverse: TChangeSet;
 begin
   if not HasUndo then
   begin
     Msg := 'Nothing to undo';
     exit;
   end;
-  tmp := TSheet.Create;
-  try
-    tmp.Assign(Sheet);
-    Sheet.Assign(UndoSheet);
-    UndoSheet.Assign(tmp);       { Undo is itself undoable }
-  finally
-    tmp.Free;
-  end;
+  inverse := Sheet.Revert(UndoSet);
+  UndoSet.Free;
+  UndoSet := inverse;            { Undo is itself undoable }
 end;
 
 end.

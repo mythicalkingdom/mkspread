@@ -49,10 +49,43 @@ type
 
   TCellMap = specialize TDictionary<Int64, TCell>;
 
+  { What a cell looked like at some moment (Exists = False: it was empty). }
+  TCellState = record
+    Exists: Boolean;
+    Raw, Cache: string;
+    Fmt: TCellFormat;
+  end;
+  TCellStateMap = specialize TDictionary<Int64, TCellState>;
+  TWidthMap = specialize TDictionary<Integer, Integer>;
+
+  TSheetGlobals = record
+    Width: Integer;
+    Fmt: TCellFormat;
+    LabelPrefix: Char;
+    ZeroDisplay: Boolean;
+  end;
+
+  { The "before" picture of everything one command changed: only the cells and
+    column widths it touched, plus the worksheet-wide settings.  Reverting a
+    change set returns the opposite change set, so undo can be undone. }
+  TChangeSet = class
+  public
+    Cells: TCellStateMap;
+    Widths: TWidthMap;
+    Globals: TSheetGlobals;
+    constructor Create;
+    destructor Destroy; override;
+    function Count: Integer;           { cells + widths recorded }
+  end;
+
   TSheet = class
   private
     FCells: TCellMap;
     FColWd: array[1..MaxCol] of Integer;   { 0 = use global width }
+    function StateOf(key: Int64): TCellState;
+    procedure ApplyState(key: Int64; const st: TCellState);
+    procedure Touch(r, c: Integer);        { remember a cell before it changes }
+    function GlobalsNow: TSheetGlobals;
     function Key(r, c: Integer): Int64; inline;
     function GetCount: Integer;
   public
@@ -60,6 +93,9 @@ type
     GlobalFmt: TCellFormat;
     GlobalLabelPrefix: Char;
     ZeroDisplay: Boolean;         { False: zero values are shown blank }
+    { While set, every change is recorded here first (see TChangeSet).  The
+      owner starts a group before a command and clears the property after. }
+    Journal: TChangeSet;
     constructor Create;
     destructor Destroy; override;
     function Find(r, c: Integer): TCell;          { nil when empty }
@@ -67,7 +103,12 @@ type
     procedure Remove(r, c: Integer);
     procedure Clear;                              { cells and column widths }
     procedure SetLabelAlignment(ch: Char; all: Boolean; r1, c1, r2, c2: Integer);
-    procedure Assign(Src: TSheet);                { deep copy, for Undo }
+    { Start recording a change group; the sheet keeps a reference in Journal. }
+    function BeginChange: TChangeSet;
+    { Undo/redo: put the sheet back as cs describes and return the change set
+      that undoes that in turn.  The caller owns both. }
+    function Revert(cs: TChangeSet): TChangeSet;
+    procedure SetCellFormat(r, c: Integer; const fmt: TCellFormat; makeIt: Boolean);
     function NonEmpty(r, c: Integer): Boolean;    { has contents, not just a format }
     procedure UsedExtent(out maxR, maxC: Integer);
     function ColWidth(c: Integer): Integer;
@@ -83,6 +124,25 @@ function ColLetter(c: Integer): string;
 function ParseAddr(const s: string; out c, r: Integer): Boolean;
 
 implementation
+
+constructor TChangeSet.Create;
+begin
+  inherited Create;
+  Cells := TCellStateMap.Create;
+  Widths := TWidthMap.Create;
+end;
+
+destructor TChangeSet.Destroy;
+begin
+  Cells.Free;
+  Widths.Free;
+  inherited Destroy;
+end;
+
+function TChangeSet.Count: Integer;
+begin
+  Result := Cells.Count + Widths.Count;
+end;
 
 function MakeFormat(k: TFormatKind; dec: Integer): TCellFormat;
 begin
@@ -165,6 +225,7 @@ end;
 
 function TSheet.Put(r, c: Integer; const raw: string): TCell;
 begin
+  Touch(r, c);
   Result := Find(r, c);
   if Result = nil then
   begin
@@ -182,6 +243,7 @@ begin
   cell := Find(r, c);
   if cell <> nil then
   begin
+    Touch(r, c);
     FCells.Remove(Key(r, c));
     cell.Free;
   end;
@@ -190,7 +252,16 @@ end;
 procedure TSheet.Clear;
 var
   cell: TCell;
+  k: Int64;
+  c: Integer;
 begin
+  if Journal <> nil then
+  begin
+    for k in FCells.Keys do Touch(Integer(k shr 16), Integer(k and $FFFF));
+    for c := 1 to MaxCol do
+      if (FColWd[c] <> 0) and not Journal.Widths.ContainsKey(c) then
+        Journal.Widths.Add(c, FColWd[c]);
+  end;
   for cell in FCells.Values do cell.Free;
   FCells.Clear;
   FillChar(FColWd, SizeOf(FColWd), 0);
@@ -209,29 +280,113 @@ begin
     c := Integer(pair.Key and $FFFF);
     if not all and ((r < r1) or (r > r2) or (c < c1) or (c > c2)) then continue;
     if (pair.Value.Raw <> '') and (pair.Value.Raw[1] in ['''', '"', '^']) then
+    begin
+      Touch(r, c);
       pair.Value.Raw[1] := ch;
+    end;
   end;
 end;
 
-procedure TSheet.Assign(Src: TSheet);
+function TSheet.GlobalsNow: TSheetGlobals;
+begin
+  Result.Width := GlobalWidth;
+  Result.Fmt := GlobalFmt;
+  Result.LabelPrefix := GlobalLabelPrefix;
+  Result.ZeroDisplay := ZeroDisplay;
+end;
+
+function TSheet.StateOf(key: Int64): TCellState;
 var
-  pair: TCellMap.TDictionaryPair;
   cell: TCell;
 begin
-  Clear;
-  for pair in Src.FCells do
+  FillChar(Result, SizeOf(Result), 0);
+  Result.Raw := '';
+  Result.Cache := '';
+  if FCells.TryGetValue(key, cell) then
+  begin
+    Result.Exists := True;
+    Result.Raw := cell.Raw;
+    Result.Cache := cell.Cache;
+    Result.Fmt := cell.Fmt;
+  end;
+end;
+
+procedure TSheet.ApplyState(key: Int64; const st: TCellState);
+var
+  cell: TCell;
+begin
+  if not st.Exists then
+  begin
+    if FCells.TryGetValue(key, cell) then
+    begin
+      FCells.Remove(key);
+      cell.Free;
+    end;
+    exit;
+  end;
+  if not FCells.TryGetValue(key, cell) then
   begin
     cell := TCell.Create;
-    cell.Raw := pair.Value.Raw;
-    cell.Cache := pair.Value.Cache;
-    cell.Fmt := pair.Value.Fmt;
-    FCells.Add(pair.Key, cell);
+    FCells.Add(key, cell);
   end;
-  FColWd := Src.FColWd;
-  GlobalWidth := Src.GlobalWidth;
-  GlobalFmt := Src.GlobalFmt;
-  GlobalLabelPrefix := Src.GlobalLabelPrefix;
-  ZeroDisplay := Src.ZeroDisplay;
+  cell.Raw := st.Raw;
+  cell.Cache := st.Cache;
+  cell.Fmt := st.Fmt;
+end;
+
+procedure TSheet.Touch(r, c: Integer);
+var
+  k: Int64;
+begin
+  if Journal = nil then exit;
+  k := Key(r, c);
+  if not Journal.Cells.ContainsKey(k) then Journal.Cells.Add(k, StateOf(k));
+end;
+
+function TSheet.BeginChange: TChangeSet;
+begin
+  Result := TChangeSet.Create;
+  Result.Globals := GlobalsNow;
+  Journal := Result;
+end;
+
+function TSheet.Revert(cs: TChangeSet): TChangeSet;
+var
+  pair: TCellStateMap.TDictionaryPair;
+  wp: TWidthMap.TDictionaryPair;
+begin
+  Journal := nil;                          { never record while reverting }
+  Result := TChangeSet.Create;
+  Result.Globals := GlobalsNow;
+  for pair in cs.Cells do
+  begin
+    Result.Cells.Add(pair.Key, StateOf(pair.Key));
+    ApplyState(pair.Key, pair.Value);
+  end;
+  for wp in cs.Widths do
+  begin
+    Result.Widths.Add(wp.Key, FColWd[wp.Key]);
+    FColWd[wp.Key] := wp.Value;
+  end;
+  GlobalWidth := cs.Globals.Width;
+  GlobalFmt := cs.Globals.Fmt;
+  GlobalLabelPrefix := cs.Globals.LabelPrefix;
+  ZeroDisplay := cs.Globals.ZeroDisplay;
+end;
+
+procedure TSheet.SetCellFormat(r, c: Integer; const fmt: TCellFormat; makeIt: Boolean);
+var
+  cell: TCell;
+begin
+  cell := Find(r, c);
+  if cell = nil then
+  begin
+    if not makeIt then exit;
+    cell := Put(r, c, '');
+  end
+  else
+    Touch(r, c);
+  cell.Fmt := fmt;
 end;
 
 function TSheet.NonEmpty(r, c: Integer): Boolean;
@@ -277,6 +432,8 @@ end;
 
 procedure TSheet.SetColWidth(c, w: Integer);
 begin
+  if (Journal <> nil) and not Journal.Widths.ContainsKey(c) then
+    Journal.Widths.Add(c, FColWd[c]);
   FColWd[c] := w;
 end;
 

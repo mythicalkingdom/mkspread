@@ -76,6 +76,71 @@ begin
   Check(not ParseAddr('12', col, r), 'digits only');
 end;
 
+{ ---- change journal ---- }
+procedure TestJournal;
+var
+  sh: TSheet;
+  a, b: TChangeSet;
+  i: Integer;
+begin
+  sh := TSheet.Create;
+  for i := 1 to 5000 do sh.Put(i, 1, IntToStr(i));
+  sh.Put(1, 2, '''one');
+  a := sh.BeginChange;
+  sh.Put(1, 2, '''uno');
+  sh.Journal := nil;
+  CheckInt(a.Count, 1, 'journal records only the touched cell, not 5000');
+  b := sh.Revert(a);
+  CheckStr(sh.Find(1, 2).Raw, '''one', 'revert restores text');
+  a.Free;
+  a := sh.Revert(b);
+  CheckStr(sh.Find(1, 2).Raw, '''uno', 'reverting the revert redoes');
+  a.Free;
+  b.Free;
+
+  a := sh.BeginChange;
+  sh.Put(1, 2, '''dos');           { touched twice: the first state wins }
+  sh.Put(1, 2, '''tres');
+  sh.Remove(2, 1);
+  sh.Put(808, 3, 'new');
+  sh.SetColWidth(4, 20);
+  sh.SetColWidth(4, 25);
+  sh.GlobalWidth := 12;
+  sh.GlobalFmt := MakeFormat(fkFixed, 3);
+  sh.SetCellFormat(3, 1, MakeFormat(fkSci, 1), False);
+  sh.Journal := nil;
+  CheckInt(a.Count, 5, 'journal counts cells and widths once each');
+  b := sh.Revert(a);
+  CheckStr(sh.Find(1, 2).Raw, '''uno', 'first state wins');
+  CheckStr(sh.Find(2, 1).Raw, '2', 'removed cell is back');
+  Check(sh.Find(808, 3) = nil, 'added cell is gone');
+  CheckInt(sh.ColWidth(4), 9, 'width restored');
+  CheckInt(sh.GlobalWidth, 9, 'global width restored');
+  CheckStr(FormatTag(sh.GlobalFmt), 'G', 'global format restored');
+  Check(sh.Find(3, 1).Fmt.UseGlobal, 'cell format restored');
+  CheckInt(sh.Count, 5001, 'cell count back to what it was');
+  a.Free;
+  a := sh.Revert(b);
+  CheckStr(sh.Find(1, 2).Raw, '''tres', 'redo text');
+  Check(sh.Find(2, 1) = nil, 'redo removal');
+  CheckInt(sh.ColWidth(4), 25, 'redo width');
+  CheckStr(FormatTag(sh.GlobalFmt), 'F3', 'redo global format');
+  a.Free;
+  b.Free;
+
+  { erasing the sheet is a journalled change too }
+  a := sh.BeginChange;
+  sh.Clear;
+  sh.Journal := nil;
+  CheckInt(sh.Count, 0, 'cleared');
+  b := sh.Revert(a);
+  CheckInt(sh.Count, 5001, 'clear undone');
+  CheckInt(sh.ColWidth(4), 25, 'widths back after clear undone');
+  a.Free;
+  b.Free;
+  sh.Free;
+end;
+
 { ---- display formatting ---- }
 procedure TestFormat;
 var
@@ -491,6 +556,7 @@ end;
 
 begin
   TestSheet;
+  TestJournal;
   TestFormat;
   TestDates;
   TestMenus;

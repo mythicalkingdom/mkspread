@@ -78,21 +78,12 @@ end;
 procedure FormatRangeDone(S: TSession; const path: string);
 var
   r, c: Integer;
-  cell: TCell;
 begin
   if not CheckSize(S) then exit;
   S.SaveUndo;
   for r := S.Range.R1 to S.Range.R2 do
     for c := S.Range.C1 to S.Range.C2 do
-    begin
-      cell := S.Sheet.Find(r, c);
-      if cell = nil then
-      begin
-        if S.PendFmt.UseGlobal then continue;
-        cell := S.Sheet.Put(r, c, '');
-      end;
-      cell.Fmt := S.PendFmt;
-    end;
+      S.Sheet.SetCellFormat(r, c, S.PendFmt, not S.PendFmt.UseGlobal);
 end;
 
 procedure FormatApply(S: TSession; const path: string; const fmt: TCellFormat);

@@ -575,6 +575,7 @@ begin
     mPrompt: PromptKey(k);
     mPoint: PointKey(k);
   end;
+  FS.EndChange;
 end;
 
 end.
