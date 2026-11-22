@@ -558,7 +558,7 @@ begin
       if v.Num <= x.Num then hit := i else break;
     end;
   end;
-  if hit < 0 then exit(NAValue);
+  if hit < 0 then exit(ErrValue);                { not found, or below the first key }
   if vertical then Result := s.CellValue(r1 + hit, c1 + off)
   else Result := s.CellValue(r1 + off, c1 + hit);
 end;
@@ -657,5 +657,13 @@ initialization
   RegisterFunc('EXACT', 2, 2, 113, False, @FnExact);
   RegisterFunc('CALL', 1, 1, 114, False, @FnCall);
   RegisterFunc('@', 1, 1, 115, False, @FnIndirect);
+  SetFuncRangeArgs('N', 1);
+  SetFuncRangeArgs('S', 1);
+  SetFuncRangeArgs('CELL', 2);
+  SetFuncRangeArgs('COLS', 1);
+  SetFuncRangeArgs('ROWS', 1);
+  SetFuncRangeArgs('INDEX', 1);
+  SetFuncRangeArgs('VLOOKUP', 2);
+  SetFuncRangeArgs('HLOOKUP', 2);
   Randomize;
 end.

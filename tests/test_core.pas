@@ -722,6 +722,9 @@ begin
   CompileFormula('@SUM(C4..O4)', f, pos);
   CheckStr(ToHex(EncodeFormula(f, sh, 4, 16)), '02F3800080FF8000805001' + '03', 'relative range with a count byte');
   f.Free;
+  CompileFormula('@N(G7)', f, pos);
+  CheckStr(ToHex(EncodeFormula(f, sh, 1, 1)), '020680068006800680' + '70' + '03', 'a single cell where a range is expected is stored as a range');
+  f.Free;
   CompileFormula('+$A$1+B$2', f, pos);
   CheckStr(ToHex(EncodeFormula(f, sh, 3, 3)), '010000000001FF8001000903', 'absolute and mixed');
   f.Free;
@@ -737,6 +740,7 @@ begin
   Check(DecodeFormula(Bytes('02F38000' + '80FF800080' + '500103'), 4, 16, txt), 'sample range formula decodes');
   CheckStr(txt, '@SUM(C4..O4)', 'sample range text');
   Check(not DecodeFormula(Bytes('05010003'), 1, 1, txt) = False, 'integer constant');
+  Check(DecodeFormula(Bytes('020680068006800680' + '7003'), 1, 1, txt) and (txt = '@N(G7)'), 'a range of one cell reads back as a cell');
   Check(not DecodeFormula(Bytes('7F03'), 1, 1, txt), 'unknown opcode is refused');
   Check(not DecodeFormula(Bytes('0903'), 1, 1, txt), 'operator without operands is refused');
   Check(not DecodeFormula(Bytes('0501000502000003'), 1, 1, txt), 'two values left on the stack is refused');
@@ -1330,7 +1334,7 @@ begin
     Check(Abs(X.Sheet.Find(8, 15).Val.Num - (4 / 1.1 + 6 / 1.21)) < 1e-9, 'NPV');
     Check(Abs(X.Sheet.Find(9, 15).Val.Num - 0.1306623863) < 1e-8, 'IRR');
     CheckStr(Shown(X, 10, 15), '2', 'VLOOKUP finds the last key not above x');
-    CheckStr(Shown(X, 11, 15), 'NA', 'VLOOKUP below the first key is NA');
+    CheckStr(Shown(X, 11, 15), 'ERR', 'VLOOKUP below the first key is ERR (as in the original)');
     CheckStr(Shown(X, 12, 15), '2', 'HLOOKUP');
     CheckStr(Shown(X, 13, 15), 'b', 'VLOOKUP with text is an exact match');
     CheckStr(Shown(X, 14, 15), '3', 'INDEX');
@@ -1350,11 +1354,11 @@ begin
     CheckStr(Shown(X, 28, 15), '50', 'DSUM with a text criterion');
     CheckStr(Shown(X, 29, 15), '2', 'DCOUNT');
     CheckStr(Shown(X, 30, 15), '100', 'DSUM with wildcard rows (or)');
-    CheckStr(Shown(X, 31, 15), '30', 'DAVG with a numeric criterion');
+    CheckStr(Shown(X, 31, 15), 'ERR', 'a > in a label criterion is not an operator: nothing matches');
     CheckStr(Shown(X, 32, 15), '40', 'DMAX');
     CheckStr(Shown(X, 33, 15), '10', 'DMIN');
     CheckStr(Shown(X, 34, 15), '15', 'DSTD');
-    CheckStr(Shown(X, 35, 15), '90', 'DSUM with an operator criterion');
+    CheckStr(Shown(X, 35, 15), '0', 'DSUM with a label that merely starts with >');
     CheckStr(Shown(X, 36, 15), 'ERR', 'DSUM with a field outside the table');
   finally
     X.Free;

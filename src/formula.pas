@@ -121,6 +121,10 @@ type
 procedure RegisterFunc(const name: string; minArgs, maxArgs, opcode: Integer; isList: Boolean;
                        proc: TFuncProc);
 
+{ Says which arguments of a function are ranges (bit n = argument n).  The
+  file format stores such an argument as a range even when it is one cell. }
+procedure SetFuncRangeArgs(const name: string; mask: Integer);
+
 { helpers for function implementations }
 function Numeric(const v: TValue; out d: Double): Boolean;
 { numeric value of a scalar argument; False with bad set when it is not one }
@@ -259,6 +263,7 @@ type
     Proc: TFuncProc;
     Opcode: Integer;           { number in the worksheet file format }
     IsList: Boolean;           { file stores an argument-count byte }
+    RangeMask: Integer;        { bit n set: argument n is a range, stored as a range token }
   end;
 
   TFuncNode = class(TNode)
@@ -548,6 +553,15 @@ begin
   Funcs[i].Proc := proc;
   Funcs[i].Opcode := opcode;
   Funcs[i].IsList := isList;
+  Funcs[i].RangeMask := 0;
+end;
+
+procedure SetFuncRangeArgs(const name: string; mask: Integer);
+var
+  i: Integer;
+begin
+  for i := 0 to High(Funcs) do
+    if Funcs[i].Name = name then Funcs[i].RangeMask := mask;
 end;
 
 function FindFunc(const name: string): Integer;
@@ -843,11 +857,29 @@ begin
   w.PutOp(BinaryOpcode(Op));
 end;
 
+{ a single cell where a range is expected goes into the file as a range of one }
+procedure EmitAsRange(n: TNode; w: TRpnWriter);
+var
+  r1, c1, r2, c2: Integer;
+begin
+  if n is TRefNode then
+    w.PutRange(TRefNode(n).Row, TRefNode(n).Col, TRefNode(n).Row, TRefNode(n).Col,
+               TRefNode(n).AbsRow, TRefNode(n).AbsCol, TRefNode(n).AbsRow, TRefNode(n).AbsCol)
+  else if (n is TNameNode) and w.ResolveName(TNameNode(n).Name, r1, c1, r2, c2) then
+    w.PutRange(r1, c1, r2, c2, True, True, True, True)
+  else
+    n.Emit(w);
+end;
+
 procedure TFuncNode.Emit(w: TRpnWriter);
 var
   i: Integer;
 begin
-  for i := 0 to High(Args) do Args[i].Emit(w);
+  for i := 0 to High(Args) do
+    if ((Funcs[Def].RangeMask shr i) and 1) <> 0 then
+      EmitAsRange(Args[i], w)
+    else
+      Args[i].Emit(w);
   w.PutFunc(Funcs[Def].Opcode, Length(Args), Funcs[Def].IsList);
 end;
 

@@ -6,7 +6,9 @@
   constant) and a check (D: 0 = the two agree, 1 = they differ).  Rows that
   need a look rather than a number are in the display sections below.
 
-  Usage: make_testsheet <output.wk1> }
+  Usage: make_testsheet <output.wk1> [section 1..9]
+  With a section number only that section's tests are written (to find which
+  formulas make the original program complain). }
 program make_testsheet;
 {$mode objfpc}{$H+}
 
@@ -15,6 +17,7 @@ uses SysUtils, Classes, sheet, formula, cellfmt, session, wk1, fn_time;
 var
   S: TSession;
   Row: Integer;
+  SecNo, Only: Integer;            { Only > 0: write just that section }
   Kinds: array[0..2000] of Char;     { n = number, s = string, e = ERR, a = NA }
 
 function FixedClock: Double;
@@ -22,8 +25,15 @@ begin
   Result := 36526.5;
 end;
 
+function Active: Boolean;
+begin
+  Result := (Only = 0) or (SecNo = Only);
+end;
+
 procedure Section(const title: string);
 begin
+  Inc(SecNo);
+  if not Active then exit;
   Inc(Row);
   S.Sheet.Put(Row, 1, '''--- ' + title + ' ---');
   Inc(Row);
@@ -31,6 +41,7 @@ end;
 
 procedure T(const desc, f: string);
 begin
+  if not Active then exit;
   S.Sheet.Put(Row, 1, '''' + desc);
   S.Sheet.Put(Row, 2, f);
   Kinds[Row] := '?';
@@ -222,7 +233,7 @@ begin
   T('@DSUM(P6:Q10,1,R6:R7)  Name = Smith', '@DSUM(P6..Q10,1,R6..R7)');
   T('@DCOUNT(P6:Q10,1,R6:R7)', '@DCOUNT(P6..Q10,1,R6..R7)');
   T('@DSUM with wildcard Sm?th or Jones', '@DSUM(P6..Q10,1,S6..S8)');
-  T('@DAVG Amt > 15', '@DAVG(P6..Q10,1,T6..T7)');
+  T('@DAVG with the label criterion >15 (no match: ERR)', '@DAVG(P6..Q10,1,T6..T7)');
   T('@DMAX Name = Smith', '@DMAX(P6..Q10,1,R6..R7)');
   T('@DMIN Name = Smith', '@DMIN(P6..Q10,1,R6..R7)');
   T('@DSTD Name = Smith', '@DSTD(P6..Q10,1,R6..R7)');
@@ -326,10 +337,12 @@ var
 begin
   if ParamCount < 1 then
   begin
-    WriteLn('usage: make_testsheet output.wk1');
+    WriteLn('usage: make_testsheet output.wk1 [section 1..9]');
     Halt(2);
   end;
   fn_time.ClockNow := @FixedClock;
+  Only := 0;
+  if ParamCount >= 2 then Only := StrToIntDef(ParamStr(2), 0);
   S := TSession.Create;
   S.Sheet.SetColWidth(1, 44);
   S.Sheet.SetColWidth(2, 16);
@@ -345,7 +358,7 @@ begin
   last := Row - 1;
   FinishTests(6, last);
   S.Sheet.Put(3, 2, Format('@SUM(D6..D%d)', [last]));
-  Display(last + 3);
+  if Only = 0 then Display(last + 3);
   S.Calc.Recalc;
   w := TStringList.Create;
   FillChar(info, SizeOf(info), 0);

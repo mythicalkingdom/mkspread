@@ -107,7 +107,12 @@ differences in B3.
   below the first); text needs an exact match, ignoring case.
 - Database functions: criteria rows are alternatives, cells in a row all must
   hold; text criteria are exact (case-insensitive, `?` and `*` wildcards, `~`
-  negates), `< > <= >= <> =` prefixes work on numbers and text.
+  negates).  **Observed in the original program:** a label such as `>15` is
+  not a comparison; it matches no record.  Formula criteria are not supported.
+- **Observed in the original program:** `@VLOOKUP` of a value below the first
+  key is ERR (not NA); a function argument that is a range is stored as a
+  range token even for one cell (`@N(G7)` is `@N(G7..G7)` in the file), and
+  `@N`, `@S`, `@CELL` returned ERR when it was stored as a plain reference.
 - `@NPV` and `@IRR` use the numeric cells of the range in row-major order and
   skip blanks and text.
 - `@@("A1")` is the contents of the cell named by the text; `@CALL` is ERR.

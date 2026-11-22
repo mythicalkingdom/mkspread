@@ -19,6 +19,7 @@ build/make_testsheet: $(SRCS) tests/make_testsheet.pas
 testsheet: build/make_testsheet
 	mkdir -p private-samples
 	./build/make_testsheet private-samples/MKTEST.WK1
+	for n in 1 2 3 4 5 6 7 8 9; do ./build/make_testsheet private-samples/MKT$$n.WK1 $$n > /dev/null; done
 
 run: all
 	./build/mkspread

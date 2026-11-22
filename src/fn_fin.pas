@@ -408,13 +408,14 @@ begin
   Result := si > Length(s);
 end;
 
-{ does the record's cell satisfy one criterion cell? }
+{ Does the record's cell satisfy one criterion cell?  A number matches an equal
+  number; a label matches text exactly (ignoring case) with ? and * wildcards,
+  and a leading ~ negates it.  Comparison operators written in a label (">15")
+  are NOT operators: the original program matched no record for them. }
 function CriterionMet(const crit, cell: TValue): Boolean;
 var
-  t, op, rest: string;
+  t, hay: string;
   neg: Boolean;
-  d: Double;
-  cmp, opLen: Integer;
 begin
   if crit.IsEmpty then exit(True);
   if crit.Kind = vkNum then
@@ -427,45 +428,11 @@ begin
     neg := True;
     Delete(t, 1, 1);
   end;
-  op := '=';
-  opLen := 0;                                   { text without an operator means equals }
-  if Copy(t, 1, 2) = '<=' then begin op := '<='; opLen := 2; end
-  else if Copy(t, 1, 2) = '>=' then begin op := '>='; opLen := 2; end
-  else if Copy(t, 1, 2) = '<>' then begin op := '<>'; opLen := 2; end
-  else if (t <> '') and (t[1] in ['<', '>', '=']) then begin op := t[1]; opLen := 1; end;
-  rest := Copy(t, opLen + 1, MaxInt);
-  if IsNumberLiteral(Trim(rest), d) then
-  begin
-    if (cell.Kind <> vkNum) or cell.IsEmpty then Result := (op = '<>')
-    else
-    begin
-      if cell.Num < d then cmp := -1 else if cell.Num > d then cmp := 1 else cmp := 0;
-      Result := ((op = '=') and (cmp = 0)) or ((op = '<>') and (cmp <> 0)) or
-                ((op = '<') and (cmp < 0)) or ((op = '>') and (cmp > 0)) or
-                ((op = '<=') and (cmp <= 0)) or ((op = '>=') and (cmp >= 0));
-    end;
-  end
-  else
-  begin
-    if cell.Kind = vkStr then t := cell.Str
-    else if cell.IsEmpty then t := ''
-    else
-    begin
-      Result := neg;
-      exit;
-    end;
-    if (op = '=') or (op = '<>') then
-    begin
-      Result := WildMatch(rest, t, 1, 1);
-      if op = '<>' then Result := not Result;
-    end
-    else
-    begin
-      cmp := CompareText(t, rest);
-      Result := ((op = '<') and (cmp < 0)) or ((op = '>') and (cmp > 0)) or
-                ((op = '<=') and (cmp <= 0)) or ((op = '>=') and (cmp >= 0));
-    end;
-  end;
+  if cell.Kind = vkStr then hay := cell.Str
+  else if cell.IsEmpty then hay := ''
+  else if cell.Kind = vkNum then hay := NumToRaw(cell.Num)
+  else exit(neg);
+  Result := WildMatch(t, hay, 1, 1);
   if neg then Result := not Result;
 end;
 
@@ -609,6 +576,17 @@ initialization
   RegisterFunc('DMAX', 3, 3, 95, False, @FnDmax);
   RegisterFunc('DVAR', 3, 3, 96, False, @FnDvar);
   RegisterFunc('DSTD', 3, 3, 97, False, @FnDstd);
+  SetFuncRangeArgs('NPV', 2);
+  SetFuncRangeArgs('IRR', 2);
+  SetFuncRangeArgs('VAR', 1);
+  SetFuncRangeArgs('STD', 1);
+  SetFuncRangeArgs('DSUM', 5);
+  SetFuncRangeArgs('DAVG', 5);
+  SetFuncRangeArgs('DCOUNT', 5);
+  SetFuncRangeArgs('DMIN', 5);
+  SetFuncRangeArgs('DMAX', 5);
+  SetFuncRangeArgs('DVAR', 5);
+  SetFuncRangeArgs('DSTD', 5);
   { financial functions of release 2 that the old documents give no file code for }
   RegisterFunc('TERM', 3, 3, -1, False, @FnTerm);
   RegisterFunc('CTERM', 3, 3, -1, False, @FnCterm);

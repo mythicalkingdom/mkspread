@@ -286,7 +286,7 @@ begin
             if i + 9 > Length(code) then exit;
             a := RefFromWords(W16(code, i + 1), W16(code, i + 3), originR, originC);
             b := RefFromWords(W16(code, i + 5), W16(code, i + 7), originR, originC);
-            stack.Add(a + '..' + b);
+            if a = b then stack.Add(a) else stack.Add(a + '..' + b);   { a range of one cell is a cell }
             Inc(i, 9);
           end;
         3:
