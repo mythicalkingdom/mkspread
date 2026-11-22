@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, Classes, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
+uses SysUtils, Classes, Math, fn_time, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
 
 var
   Fails, Total: Integer;
@@ -1094,6 +1094,304 @@ begin
   end;
 end;
 
+{ ---- @functions ---- }
+function FixedClock: Double;
+begin
+  Result := 36526.5;          { 1-Jan-2000, noon }
+end;
+
+function NumA1(const f: string): Double;
+var
+  X: TSession;
+begin
+  X := TSession.Create;
+  try
+    X.Sheet.Put(1, 1, f);
+    X.Calc.Recalc;
+    if X.Sheet.Find(1, 1).Val.Kind = vkNum then Result := X.Sheet.Find(1, 1).Val.Num
+    else Result := NaN;
+  finally
+    X.Free;
+  end;
+end;
+
+procedure CheckNum(const f: string; want: Double);
+begin
+  Inc(Total);
+  if IsNan(NumA1(f)) or (Abs(NumA1(f) - want) > 1e-6 * (1 + Abs(want))) then
+  begin
+    Inc(Fails);
+    WriteLn('FAIL: ', f, ': got ', EvalA1(f), ' want ', want:0:9);
+  end;
+end;
+
+procedure CheckText(const f, want: string);
+begin
+  CheckStr(EvalA1(f), want, f);
+end;
+
+procedure TestFunctions;
+const
+  StatData: array[0..7] of Integer = (2, 4, 4, 4, 5, 5, 7, 9);
+var
+  X: TSession;
+  i: Integer;
+  w: TStringList;
+  info: TFileInfo;
+  dir: string;
+  msg: string;
+begin
+  fn_time.ClockNow := @FixedClock;
+
+  { math }
+  CheckNum('@ABS(-3)', 3);
+  CheckNum('@INT(-3.7)', -3);
+  CheckNum('@SQRT(16)', 4);
+  CheckText('@SQRT(-1)', 'ERR');
+  CheckNum('@LOG(100)', 2);
+  CheckText('@LOG(0)', 'ERR');
+  CheckNum('@LN(1)', 0);
+  CheckNum('@EXP(0)', 1);
+  CheckText('@EXP(1000)', 'ERR');
+  CheckNum('@PI', Pi);
+  CheckNum('@SIN(0)', 0);
+  CheckNum('@COS(0)', 1);
+  CheckNum('@TAN(0)', 0);
+  CheckNum('@ATAN(1)*4', Pi);
+  CheckNum('@ATAN2(1,1)', Pi / 4);
+  CheckNum('@ATAN2(-1,0)', Pi);
+  CheckNum('@ASIN(1)', Pi / 2);
+  CheckText('@ASIN(2)', 'ERR');
+  CheckNum('@ACOS(1)', 0);
+  CheckNum('@MOD(7,3)', 1);
+  CheckNum('@MOD(-7,3)', -1);
+  CheckText('@MOD(5,0)', 'ERR');
+  CheckNum('@ROUND(2.5,0)', 3);
+  CheckNum('@ROUND(-2.5,0)', -3);
+  CheckNum('@ROUND(1234.5678,2)', 1234.57);
+  CheckNum('@ROUND(1234,-2)', 1200);
+  CheckNum('@RAND#AND#1', 1);
+
+  { logic }
+  CheckNum('@IF(1,5,6)', 5);
+  CheckNum('@IF(0,5,6)', 6);
+  CheckNum('@IF(1,5,1/0)', 5);
+  CheckNum('@CHOOSE(1,10,20,30)', 20);
+  CheckNum('@CHOOSE(0,10,20,30)', 10);
+  CheckText('@CHOOSE(5,1,2)', 'ERR');
+  CheckNum('@ISNA(@NA)', 1);
+  CheckNum('@ISNA(@ERR)', 0);
+  CheckNum('@ISERR(@ERR)', 1);
+  CheckNum('@ISERR(5)', 0);
+  CheckNum('@ISNUMBER(5)', 1);
+  CheckNum('@ISNUMBER("a")', 0);
+  CheckNum('@ISSTRING("a")', 1);
+  CheckNum('@TRUE+@FALSE', 1);
+
+  { text }
+  CheckNum('@LENGTH("hello")', 5);
+  CheckText('@LEFT("hello",2)', 'he');
+  CheckText('@RIGHT("hello",2)', 'lo');
+  CheckText('@RIGHT("hi",9)', 'hi');
+  CheckText('@MID("hello",1,3)', 'ell');
+  CheckText('@MID("hello",9,3)', '');
+  CheckText('@REPEAT("ab",3)', 'ababab');
+  CheckText('@UPPER("abc")', 'ABC');
+  CheckText('@LOWER("ABC")', 'abc');
+  CheckText('@PROPER("hello wORLD 3x")', 'Hello World 3X');
+  CheckText('@TRIM("  a   b  ")', 'a b');
+  CheckNum('@EXACT("a","A")', 0);
+  CheckNum('@EXACT("a","a")', 1);
+  CheckText('@REPLACE("abcdef",1,2,"XY")', 'aXYdef');
+  CheckNum('@FIND("c","abcabc",0)', 2);
+  CheckNum('@FIND("c","abcabc",3)', 5);
+  CheckText('@FIND("z","abc",0)', 'ERR');
+  CheckText('@STRING(3.14159,2)', '3.14');
+  CheckNum('@VALUE("12.5")', 12.5);
+  CheckText('@VALUE("abc")', 'ERR');
+  CheckText('@CHAR(65)', 'A');
+  CheckNum('@CODE("A")', 65);
+  CheckNum('@CODE(@CHAR(233))', 233);
+
+  { dates and times (clock fixed at 1-Jan-2000 noon) }
+  CheckNum('@DATE(100,1,1)', 36526);
+  CheckNum('@DATE(96,2,29)', 35124);
+  CheckText('@DATE(96,2,30)', 'ERR');
+  CheckText('@DATE(1996,1,1)', 'ERR');
+  CheckNum('@DAY(35124)', 29);
+  CheckNum('@MONTH(35124)', 2);
+  CheckNum('@YEAR(35124)', 96);
+  CheckNum('@NOW', 36526.5);
+  CheckNum('@TIME(12,0,0)', 0.5);
+  CheckText('@TIME(24,0,0)', 'ERR');
+  CheckNum('@HOUR(0.75)', 18);
+  CheckNum('@MINUTE(@TIME(1,23,45))', 23);
+  CheckNum('@SECOND(@TIME(1,23,45))', 45);
+  CheckNum('@DATEVALUE("29-Feb-96")', 35124);
+  CheckNum('@DATEVALUE("2/29/96")', 35124);
+  CheckNum('@DATEVALUE("Mar-96")', 35125);
+  CheckNum('@DATEVALUE("15-Jun")', 36692);
+  CheckText('@DATEVALUE("nonsense")', 'ERR');
+  CheckNum('@TIMEVALUE("1:30 PM")', 0.5625);
+  CheckNum('@TIMEVALUE("13:30:00")', 0.5625);
+  CheckNum('@TIMEVALUE("12:00 AM")', 0);
+
+  { financial }
+  CheckNum('@PMT(1000,0.01,12)', 1000 * 0.01 / (1 - Power(1.01, -12)));
+  CheckNum('@PV(100,0.01,12)', 100 * (1 - Power(1.01, -12)) / 0.01);
+  CheckNum('@FV(100,0.01,12)', 100 * (Power(1.01, 12) - 1) / 0.01);
+  CheckNum('@PV(100,0,12)', 1200);
+  CheckNum('@TERM(100,0.01,1200)', Ln(1 + 1200 * 0.01 / 100) / Ln(1.01));
+  CheckNum('@CTERM(0.1,2000,1000)', Ln(2) / Ln(1.1));
+  CheckNum('@RATE(2000,1000,10)', Power(2, 0.1) - 1);
+  CheckNum('@SLN(1000,100,9)', 100);
+  CheckNum('@SYD(1000,100,3,1)', 450);
+  CheckNum('@SYD(1000,100,3,3)', 150);
+  CheckNum('@DDB(1000,100,5,1)', 400);
+  CheckNum('@DDB(1000,100,5,2)', 240);
+  CheckNum('@DDB(1000,100,5,5)', 29.6);
+  CheckText('@SLN(1,1,0)', 'ERR');
+
+  { statistics, lookup, information, database }
+  X := TSession.Create;
+  try
+    for i := 1 to 8 do X.Sheet.Put(i, 2, IntToStr(StatData[i - 1]));
+    X.Sheet.Put(1, 4, '4');
+    X.Sheet.Put(2, 4, '6');
+    X.Sheet.Put(3, 4, '''text');
+    X.Sheet.Put(1, 5, '-100');
+    X.Sheet.Put(2, 5, '60');
+    X.Sheet.Put(3, 5, '60');
+    X.Sheet.Put(1, 6, '10'); X.Sheet.Put(1, 7, '1');
+    X.Sheet.Put(2, 6, '20'); X.Sheet.Put(2, 7, '2');
+    X.Sheet.Put(3, 6, '30'); X.Sheet.Put(3, 7, '3');
+    X.Sheet.Put(5, 6, '''a'); X.Sheet.Put(5, 7, '''b');
+    X.Sheet.Put(6, 6, '5'); X.Sheet.Put(6, 7, '6');
+    X.Sheet.Put(2, 9, '7').Fmt := MakeFormat(fkCurrency, 2);
+    X.Sheet.SetColWidth(9, 14);
+    X.Sheet.Put(3, 9, '''lbl');
+    { database: names in column K, amounts in L }
+    X.Sheet.Put(1, 11, '''Name'); X.Sheet.Put(1, 12, '''Amt');
+    X.Sheet.Put(2, 11, '''Smith'); X.Sheet.Put(2, 12, '10');
+    X.Sheet.Put(3, 11, '''Smyth'); X.Sheet.Put(3, 12, '20');
+    X.Sheet.Put(4, 11, '''Jones'); X.Sheet.Put(4, 12, '30');
+    X.Sheet.Put(5, 11, '''Smith'); X.Sheet.Put(5, 12, '40');
+    X.Sheet.Put(10, 11, '''Name'); X.Sheet.Put(11, 11, '''Smith');
+    X.Sheet.Put(10, 13, '''Name'); X.Sheet.Put(11, 13, '''Sm?th'); X.Sheet.Put(12, 13, '''Jones');
+    X.Sheet.Put(10, 14, '''Amt'); X.Sheet.Put(11, 14, '''>15');
+    X.Sheet.Put(1, 15, '@AVG(B1..B8)');
+    X.Sheet.Put(2, 15, '@STD(B1..B8)');
+    X.Sheet.Put(3, 15, '@VAR(B1..B8)');
+    X.Sheet.Put(4, 15, '@AVG(D1..D4)');
+    X.Sheet.Put(5, 15, '@COUNT(D1..D4)');
+    X.Sheet.Put(6, 15, '@MIN(D1..D4)');
+    X.Sheet.Put(7, 15, '@MAX(D1..D4)');
+    X.Sheet.Put(8, 15, '@NPV(0.1,D1..D2)');
+    X.Sheet.Put(9, 15, '@IRR(0.1,E1..E3)');
+    X.Sheet.Put(10, 15, '@VLOOKUP(25,F1..G3,1)');
+    X.Sheet.Put(11, 15, '@VLOOKUP(5,F1..G3,1)');
+    X.Sheet.Put(8, 6, '10'); X.Sheet.Put(8, 7, '20'); X.Sheet.Put(8, 8, '30');
+    X.Sheet.Put(9, 6, '1'); X.Sheet.Put(9, 7, '2'); X.Sheet.Put(9, 8, '3');
+    X.Sheet.Put(12, 15, '@HLOOKUP(25,F8..H9,1)');
+    X.Sheet.Put(13, 15, '@VLOOKUP("a",F5..G6,1)');
+    X.Sheet.Put(14, 15, '@INDEX(F1..G3,1,2)');
+    X.Sheet.Put(15, 15, '@COLS(F1..G3)*10+@ROWS(F1..G3)');
+    X.Sheet.Put(16, 15, '@N(D3)+@N(D2)');
+    X.Sheet.Put(17, 15, '+@S(D3)&@S(D2)');
+    X.Sheet.Put(18, 15, '@CELL("address",C7)');
+    X.Sheet.Put(19, 15, '@CELL("col",C7)*100+@CELL("row",C7)');
+    X.Sheet.Put(20, 15, '@CELL("type",D1)');
+    X.Sheet.Put(21, 15, '@CELL("type",D3)');
+    X.Sheet.Put(22, 15, '@CELL("type",D9)');
+    X.Sheet.Put(23, 15, '@CELL("format",I2)');
+    X.Sheet.Put(24, 15, '@CELL("width",I2)');
+    X.Sheet.Put(25, 15, '@CELL("prefix",I3)');
+    X.Sheet.Put(26, 15, '@CELLPOINTER("address")');
+    X.Sheet.Put(27, 15, '@@("D2")*2');
+    X.Sheet.Put(28, 15, '@DSUM(K1..L5,1,K10..K11)');
+    X.Sheet.Put(29, 15, '@DCOUNT(K1..L5,1,K10..K11)');
+    X.Sheet.Put(30, 15, '@DSUM(K1..L5,1,M10..M12)');
+    X.Sheet.Put(31, 15, '@DAVG(K1..L5,1,N10..N11)');
+    X.Sheet.Put(32, 15, '@DMAX(K1..L5,1,K10..K11)');
+    X.Sheet.Put(33, 15, '@DMIN(K1..L5,1,K10..K11)');
+    X.Sheet.Put(34, 15, '@DSTD(K1..L5,1,K10..K11)');
+    X.Sheet.Put(35, 15, '@DSUM(K1..L5,1,N10..N11)');
+    X.Sheet.Put(36, 15, '@DSUM(K1..L5,5,K10..K11)');
+    X.Sheet.PointerRow := 4;
+    X.Sheet.PointerCol := 2;
+    X.Calc.Recalc;
+    CheckStr(Shown(X, 1, 15), '5', 'AVG');
+    CheckStr(Shown(X, 2, 15), '2', 'STD is the population deviation');
+    CheckStr(Shown(X, 3, 15), '4', 'VAR is the population variance');
+    CheckStr(Shown(X, 4, 15), '3.333333333', 'AVG counts text as zero');
+    CheckStr(Shown(X, 5, 15), '3', 'COUNT counts every non-empty cell');
+    CheckStr(Shown(X, 6, 15), '0', 'MIN treats text as zero');
+    CheckStr(Shown(X, 7, 15), '6', 'MAX');
+    Check(Abs(X.Sheet.Find(8, 15).Val.Num - (4 / 1.1 + 6 / 1.21)) < 1e-9, 'NPV');
+    Check(Abs(X.Sheet.Find(9, 15).Val.Num - 0.1306623863) < 1e-8, 'IRR');
+    CheckStr(Shown(X, 10, 15), '2', 'VLOOKUP finds the last key not above x');
+    CheckStr(Shown(X, 11, 15), 'NA', 'VLOOKUP below the first key is NA');
+    CheckStr(Shown(X, 12, 15), '2', 'HLOOKUP');
+    CheckStr(Shown(X, 13, 15), 'b', 'VLOOKUP with text is an exact match');
+    CheckStr(Shown(X, 14, 15), '3', 'INDEX');
+    CheckStr(Shown(X, 15, 15), '23', 'COLS and ROWS');
+    CheckStr(Shown(X, 16, 15), '6', 'N');
+    CheckStr(Shown(X, 17, 15), 'text', 'S');
+    CheckStr(Shown(X, 18, 15), '$C$7', 'CELL address');
+    CheckStr(Shown(X, 19, 15), '307', 'CELL col and row');
+    CheckStr(Shown(X, 20, 15), 'v', 'CELL type value');
+    CheckStr(Shown(X, 21, 15), 'l', 'CELL type label');
+    CheckStr(Shown(X, 22, 15), 'b', 'CELL type blank');
+    CheckStr(Shown(X, 23, 15), 'C2', 'CELL format');
+    CheckStr(Shown(X, 24, 15), '14', 'CELL width');
+    CheckStr(Shown(X, 25, 15), '''', 'CELL prefix');
+    CheckStr(Shown(X, 26, 15), '$B$4', 'CELLPOINTER');
+    CheckStr(Shown(X, 27, 15), '12', '@@');
+    CheckStr(Shown(X, 28, 15), '50', 'DSUM with a text criterion');
+    CheckStr(Shown(X, 29, 15), '2', 'DCOUNT');
+    CheckStr(Shown(X, 30, 15), '100', 'DSUM with wildcard rows (or)');
+    CheckStr(Shown(X, 31, 15), '30', 'DAVG with a numeric criterion');
+    CheckStr(Shown(X, 32, 15), '40', 'DMAX');
+    CheckStr(Shown(X, 33, 15), '10', 'DMIN');
+    CheckStr(Shown(X, 34, 15), '15', 'DSTD');
+    CheckStr(Shown(X, 35, 15), '90', 'DSUM with an operator criterion');
+    CheckStr(Shown(X, 36, 15), 'ERR', 'DSUM with a field outside the table');
+  finally
+    X.Free;
+  end;
+
+  { function formulas through the file format }
+  dir := TmpDir;
+  X := TSession.Create;
+  w := TStringList.Create;
+  try
+    X.Sheet.Put(1, 1, '@CHOOSE(1,10,20,30)');
+    X.Sheet.Put(2, 1, '@IF(@ISNA(@NA),@LENGTH("abc"),0)');
+    X.Sheet.Put(3, 1, '@@("A1")+@SUM(1,2)');
+    X.Sheet.Put(4, 1, '@SLN(1000,100,9)');
+    X.Calc.Recalc;
+    FillChar(info, SizeOf(info), 0);
+    info.CursorCol := 1; info.CursorRow := 1; info.LeftCol := 1; info.TopRow := 1;
+    msg := SaveWorksheet(dir + '/f.wk1', X.Sheet, False, info, w);
+    CheckStr(msg, '', 'save formulas with functions');
+    Check(w.Count >= 1, 'a function without a file code is reported');
+    X.Sheet.Reset;
+    msg := LoadWorksheet(dir + '/f.wk1', X.Sheet, nil, info);
+    CheckStr(msg, '', 'load them back');
+    X.Calc.Recalc;
+    CheckStr(X.Sheet.Find(1, 1).Raw, '@CHOOSE(1,10,20,30)', 'list function round trip');
+    CheckStr(Shown(X, 1, 1), '20', 'CHOOSE value after the file');
+    CheckStr(X.Sheet.Find(2, 1).Raw, '@IF(@ISNA(@NA),@LENGTH("abc"),0)', 'nested functions');
+    CheckStr(Shown(X, 2, 1), '3', 'nested value');
+    CheckStr(X.Sheet.Find(3, 1).Raw, '@@("A1")+@SUM(1,2)', '@@ round trip');
+    CheckStr(X.Sheet.Find(4, 1).Raw, '100', 'a formula with no file code is kept as its value');
+  finally
+    w.Free;
+    X.Free;
+    CleanDir(dir);
+  end;
+end;
+
 { ---- dates (serial numbers, including the 1900 leap-year quirk) ---- }
 procedure TestDates;
 var
@@ -1632,6 +1930,7 @@ begin
   TestDates;
   TestFormulas;
   TestEditOps;
+  TestFunctions;
   TestCharsets;
   TestFormatBytes;
   TestRpn;

@@ -414,7 +414,7 @@ var
   t, op, rest: string;
   neg: Boolean;
   d: Double;
-  cmp: Integer;
+  cmp, opLen: Integer;
 begin
   if crit.IsEmpty then exit(True);
   if crit.Kind = vkNum then
@@ -428,11 +428,12 @@ begin
     Delete(t, 1, 1);
   end;
   op := '=';
-  if Copy(t, 1, 2) = '<=' then op := '<='
-  else if Copy(t, 1, 2) = '>=' then op := '>='
-  else if Copy(t, 1, 2) = '<>' then op := '<>'
-  else if (t <> '') and (t[1] in ['<', '>', '=']) then op := t[1];
-  rest := Copy(t, Length(op) + 1, MaxInt);
+  opLen := 0;                                   { text without an operator means equals }
+  if Copy(t, 1, 2) = '<=' then begin op := '<='; opLen := 2; end
+  else if Copy(t, 1, 2) = '>=' then begin op := '>='; opLen := 2; end
+  else if Copy(t, 1, 2) = '<>' then begin op := '<>'; opLen := 2; end
+  else if (t <> '') and (t[1] in ['<', '>', '=']) then begin op := t[1]; opLen := 1; end;
+  rest := Copy(t, opLen + 1, MaxInt);
   if IsNumberLiteral(Trim(rest), d) then
   begin
     if (cell.Kind <> vkNum) or cell.IsEmpty then Result := (op = '<>')

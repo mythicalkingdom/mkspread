@@ -6,8 +6,10 @@ corpus is available, verify each item and move it to "confirmed".
 
 ## Formulas (phase 4)
 - Operator precedence, highest first: `^`; unary `+ -`; `* /`; `+ - &`;
-  comparisons; `#NOT#`; `#AND# #OR#`.  `^` is left to right (`2^3^2` = 64) and
-  binds tighter than unary minus (`-2^2` = -4).
+  comparisons; `#NOT#`; `#AND# #OR#`.  This order is **confirmed** by the
+  original file-format document's precedence table (`&` is not in it; it is
+  placed with `+ -` by assumption).  `^` left to right and `-2^2` = -4 follow
+  from that table.
 - Unary plus returns its operand unchanged, including text.
 - A label counts as 0 in arithmetic; an empty cell is 0 (or "" with `&`).
 - `&` refuses numbers (ERR); a string literal in arithmetic is ERR.
@@ -81,3 +83,31 @@ Assumed, not yet checked against real files:
   numeric cells and leave labels alone.
 - `/File Xtract` puts the extracted range at A1 and copies formulas like
   `/Copy` does.
+
+## @functions (phase 7)
+All assumptions below are exercised by `MKTEST.WK1` (see `make testsheet`):
+open it in the original program, recalculate, and read the total of
+differences in B3.
+- Function names and file opcodes are from the 1985 document, confirmed for
+  `@SUM`, `@ROUND` and `@PMT` by sample files.  `@TERM`, `@CTERM`, `@RATE`,
+  `@SLN`, `@SYD`, `@DDB` have no known file code: formulas using them are
+  saved as their value (with a warning).
+- Indexes in `@MID`, `@REPLACE`, `@FIND`, `@CHOOSE`, `@INDEX` count from 0.
+- `@AVG`, `@MIN`, `@MAX`, `@VAR`, `@STD` treat text in a range as zero and
+  ignore blank cells; `@COUNT` counts every non-blank cell, text included;
+  `@VAR` and `@STD` are population statistics; `@SUM` ignores text.
+- `@ISERR(@NA)` is 0 and `@ISNA(@ERR)` is 0.  `@ISNUMBER` of a blank cell is 1.
+- `@INT` truncates toward zero; `@MOD` takes the sign of the first argument;
+  `@ROUND` rounds half away from zero; `@ATAN2(x,y)` is the angle of (x,y).
+- `@DATE` needs a year of 0..199 (1900..2099); `@YEAR` returns year-1900;
+  serial 60 is the 29-Feb-1900 leap-year quirk.
+- `@DATEVALUE` reads `DD-MMM-YY`, `DD-MMM`, `MMM-YY`, `MM/DD/YY`, `MM/DD`;
+  missing years mean the current year.
+- `@VLOOKUP`/`@HLOOKUP`: numbers find the last key not above the value (NA
+  below the first); text needs an exact match, ignoring case.
+- Database functions: criteria rows are alternatives, cells in a row all must
+  hold; text criteria are exact (case-insensitive, `?` and `*` wildcards, `~`
+  negates), `< > <= >= <> =` prefixes work on numbers and text.
+- `@NPV` and `@IRR` use the numeric cells of the range in row-major order and
+  skip blanks and text.
+- `@@("A1")` is the contents of the cell named by the text; `@CALL` is ERR.

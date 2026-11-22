@@ -305,7 +305,7 @@ begin
       startOfWord := False;
     end
     else
-      startOfWord := not ((w[i] >= #128) or (Chr(Ord(w[i])) in ['0'..'9']));
+      startOfWord := not (w[i] >= #128);           { anything but a letter starts a new word }
   end;
   Result := StrValue(FromU(w));
 end;

@@ -20,7 +20,7 @@ program mkspread;
 uses SysUtils, keys, terminal, session, commands, controller, view, demo, keytest, cmdfile;
 
 const
-  Version = '0.6 (phase 6: files)';
+  Version = '0.7 (phase 7: @functions)';
 
 procedure Usage;
 begin

@@ -68,7 +68,7 @@ begin
   Result := False;
   t := UpperCase(Trim(text));
   DecodeDate(ClockNow(), yy, mm, dd);
-  cy := yy - 1900;
+  cy := yy;                                      { a missing year is this year }
   if Pos('/', t) > 0 then
   begin
     parts := t.Split(['/']);
