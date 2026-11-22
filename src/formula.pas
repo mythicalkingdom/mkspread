@@ -362,8 +362,7 @@ begin
   Result := True;
   case v.Kind of
     vkNum: d := v.Num;
-    vkStr:
-      if v.IsLabel then d := 0 else Result := False;
+    vkStr: d := 0;                  { text counts as zero in arithmetic (observed) }
   else
     Result := False;
   end;
@@ -683,6 +682,8 @@ begin
   v := node.Eval(src);
   if v.Kind = vkErr then begin bad := ErrValue; exit(False); end;
   if v.Kind = vkNA then begin bad := NAValue; exit(False); end;
+  { a function argument that is text (not a label cell) is an error }
+  if (v.Kind = vkStr) and not v.IsLabel then begin bad := ErrValue; exit(False); end;
   if not Numeric(v, d) then begin bad := ErrValue; exit(False); end;
   Result := True;
 end;

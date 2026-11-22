@@ -197,9 +197,9 @@ begin
   CheckStr(ValueText(c, sh, 20), '', 'hidden');
   c.Fmt := MakeFormat(fkDate, 1);
   c.Raw := '36526';
-  CheckStr(ValueText(c, sh, 20), '01-Jan-00', 'date D1');
+  CheckStr(ValueText(c, sh, 20), '01-Jan-2000', 'date D1 (four digits from 2000)');
   c.Fmt := MakeFormat(fkDate, 4);
-  CheckStr(ValueText(c, sh, 20), '01/01/00', 'date D4');
+  CheckStr(ValueText(c, sh, 20), '01/01/2000', 'date D4 (four digits from 2000)');
   c.Fmt := MakeFormat(fkDate, 6);
   c.Raw := '0.5625';
   CheckStr(ValueText(c, sh, 20), '01:30:00 PM', 'time D6');
@@ -338,12 +338,12 @@ begin
   CheckStr(EvalA1('#NOT#0'), '1', 'not');
   CheckStr(EvalA1('1+2>2'), '1', 'arithmetic before comparison');
   CheckStr(EvalA1('+"a"&"b"'), 'ab', 'string concatenation');
-  CheckStr(EvalA1('+"a"+1'), 'ERR', 'string literal in arithmetic is an error');
+  CheckStr(EvalA1('+"a"+1'), '1', 'a string in arithmetic counts as zero (observed)');
   CheckStr(EvalA1('+"abc"="ABC"'), '1', 'text comparison ignores case (assumed)');
   CheckStr(EvalA1('@NA'), 'NA', 'NA');
   CheckStr(EvalA1('@NA+1'), 'NA', 'NA propagates');
   CheckStr(EvalA1('@ERR+@NA'), 'ERR', 'ERR beats NA');
-  CheckStr(EvalA1('@PI*2'), '6.283185307', 'pi');
+  CheckStr(EvalA1('@PI*2'), '6.2831853072', 'pi (General shows 10 decimals)');
   CheckStr(EvalA1('@SUM(1,2,3)'), '6', 'sum of numbers');
   CheckStr(EvalA1('+A1..A2'), 'ERR', 'range outside a function');
 
@@ -721,6 +721,9 @@ begin
   f.Free;
   CompileFormula('@SUM(C4..O4)', f, pos);
   CheckStr(ToHex(EncodeFormula(f, sh, 4, 16)), '02F3800080FF8000805001' + '03', 'relative range with a count byte');
+  f.Free;
+  CompileFormula('@STD(A1..A2)', f, pos);
+  CheckStr(ToHex(EncodeFormula(f, sh, 3, 3)), '02FE80FE9FFE80FF9F' + '58' + '01' + '03', '@STD is a list function with a count byte');
   f.Free;
   CompileFormula('@N(G7)', f, pos);
   CheckStr(ToHex(EncodeFormula(f, sh, 1, 1)), '020680068006800680' + '70' + '03', 'a single cell where a range is expected is stored as a range');
@@ -1327,7 +1330,7 @@ begin
     CheckStr(Shown(X, 1, 15), '5', 'AVG');
     CheckStr(Shown(X, 2, 15), '2', 'STD is the population deviation');
     CheckStr(Shown(X, 3, 15), '4', 'VAR is the population variance');
-    CheckStr(Shown(X, 4, 15), '3.333333333', 'AVG counts text as zero');
+    CheckStr(Shown(X, 4, 15), '3.3333333333', 'AVG counts text as zero');
     CheckStr(Shown(X, 5, 15), '3', 'COUNT counts every non-empty cell');
     CheckStr(Shown(X, 6, 15), '0', 'MIN treats text as zero');
     CheckStr(Shown(X, 7, 15), '6', 'MAX');

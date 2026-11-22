@@ -184,7 +184,7 @@ begin
   if intDigits + neg <= width then
   begin
     avail := width - neg - intDigits - 1;
-    if avail > 9 then avail := 9;
+    if avail > 10 then avail := 10;           { General shows up to 10 decimals (observed) }
     if avail < 0 then avail := 0;
     Str(d:0:avail, s);
     if Pos('.', s) > 0 then

@@ -12,6 +12,7 @@ corpus is available, verify each item and move it to "confirmed".
   from that table.
 - Unary plus returns its operand unchanged, including text.
 - A label counts as 0 in arithmetic; an empty cell is 0 (or "" with `&`).
+  **Observed:** a string literal in arithmetic is 0 too (`+"a"+1` = 1).
 - `&` refuses numbers (ERR); a string literal in arithmetic is ERR.
 - Text comparison ignores case; text never compares with numbers (ERR).
 - ERR beats NA when both are present.
@@ -116,3 +117,20 @@ differences in A3.
 - `@NPV` and `@IRR` use the numeric cells of the range in row-major order and
   skip blanks and text.
 - `@@("A1")` is the contents of the cell named by the text; `@CALL` is ERR.
+
+## Observed in the original program (from the MKTEST worksheets)
+Confirmed by running the generated worksheets in DOS Lotus:
+- Precedence and every operator row of MKTEST agree, including `2^3^2` = 64,
+  `-2^2` = -4, text comparison ignoring case, `&`.
+- A string in arithmetic counts as zero (`+"a"+1` = 1).
+- General format shows up to 10 decimals (`0.1234567891`).
+- Date formats D1, D3 and D4 show a four-digit year from 2000 on
+  (`01-Jan-2000`, `Jan-2000`, `01/01/2000`); D2 and D5 have no year.
+- The `+/-` format is left-aligned.
+- Label prefixes (left, right, center, repeat) and LICS accents
+  (`café £°Ñ`) display as expected.
+- `@VLOOKUP` below the first key is ERR; single-cell range arguments are stored
+  as range tokens; a `>` in a database label criterion is not an operator.
+- Probable (to be re-checked with the next MKT7.WK1): `@VAR` and `@STD` are
+  list functions with an argument-count byte; with one stored as a fixed
+  function the original reported "Number stack full".

@@ -129,7 +129,10 @@ begin
           SetLength(t, w);
           for k := 1 to w do t[k] := '*';
         end;
-        PutBuf(x + w - Length(t), t);
+        if EffectiveFormat(cell, S.Sheet).Kind = fkPlusMinus then
+          PutBuf(x, t)                          { +/- bars start at the left }
+        else
+          PutBuf(x + w - Length(t), t);
       end;
     end;
     Inc(x, w);

@@ -566,8 +566,8 @@ initialization
   RegisterFunc('MIN', 1, 255, 83, True, @FnMin);
   RegisterFunc('MAX', 1, 255, 84, True, @FnMax);
   RegisterFunc('NPV', 2, 2, 86, False, @FnNpv);
-  RegisterFunc('VAR', 1, 1, 87, False, @FnVar);
-  RegisterFunc('STD', 1, 1, 88, False, @FnStd);
+  RegisterFunc('VAR', 1, 255, 87, True, @FnVar);          { list functions, like @SUM }
+  RegisterFunc('STD', 1, 255, 88, True, @FnStd);
   RegisterFunc('IRR', 2, 2, 89, False, @FnIrr);
   RegisterFunc('DSUM', 3, 3, 91, False, @FnDsum);
   RegisterFunc('DAVG', 3, 3, 92, False, @FnDavg);
@@ -578,8 +578,6 @@ initialization
   RegisterFunc('DSTD', 3, 3, 97, False, @FnDstd);
   SetFuncRangeArgs('NPV', 2);
   SetFuncRangeArgs('IRR', 2);
-  SetFuncRangeArgs('VAR', 1);
-  SetFuncRangeArgs('STD', 1);
   SetFuncRangeArgs('DSUM', 5);
   SetFuncRangeArgs('DAVG', 5);
   SetFuncRangeArgs('DCOUNT', 5);

@@ -75,6 +75,12 @@ begin
   Result := Format('%.2d', [n]);
 end;
 
+{ two digits, but four from the year 2000 on (as the original program showed) }
+function YearText(y: Integer): string;
+begin
+  if y >= 2000 then Result := IntToStr(y) else Result := Two(y mod 100);
+end;
+
 function FormatSerial(value: Double; kind: Integer): string;
 var
   y, m, d, secs, h, mi, se, h12: Integer;
@@ -84,10 +90,10 @@ begin
   begin
     if not SerialToDate(Trunc(value), y, m, d) then exit('ERR');
     case kind of
-      1: Result := Two(d) + '-' + MonthNames[m] + '-' + Two(y mod 100);
+      1: Result := Two(d) + '-' + MonthNames[m] + '-' + YearText(y);
       2: Result := Two(d) + '-' + MonthNames[m];
-      3: Result := MonthNames[m] + '-' + Two(y mod 100);
-      4: Result := Two(m) + '/' + Two(d) + '/' + Two(y mod 100);
+      3: Result := MonthNames[m] + '-' + YearText(y);
+      4: Result := Two(m) + '/' + Two(d) + '/' + YearText(y);
       5: Result := Two(m) + '/' + Two(d);
     end;
   end
