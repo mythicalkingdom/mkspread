@@ -1068,6 +1068,7 @@ begin
             vkNum: PutF(b, cell.Val.Num);
             vkNA:  begin nan := Int64($FFF0000000000000); PutF(b, Double(Pointer(@nan)^)); end;
             vkErr: begin nan := Int64($7FF0000000000000); PutF(b, Double(Pointer(@nan)^)); end;
+            vkStr: begin nan := Int64($7FF0000000000001); PutF(b, Double(Pointer(@nan)^)); end;   { a string follows }
           else
             PutF(b, 0);
           end;

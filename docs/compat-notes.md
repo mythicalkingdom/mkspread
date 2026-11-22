@@ -145,3 +145,17 @@ Confirmed by running the generated worksheets in DOS Lotus:
   in the TITLES record, which holds the print borders (written as unset).
 - `tests/test_samples.pas` now also compares the length of every record type
   this program writes with the same record in each real file.
+
+## Confirmed from a worksheet created in the original program (`tst1.wk1`)
+- File codes: `@RATE` 116, `@TERM` 117, `@CTERM` 118, `@SLN` 119, `@SYD` 120,
+  `@DDB` 121; also `@CELLPOINTER` 79, `@S` 111, `@N` 112, `@@` 115, `@NOW` 55
+  (all as in the 1985 table).  Their results match this program's.
+- `@TODAY` is not accepted by that version (it has `@@`, so probably 2.2 or
+  later).
+- A formula that returns text is a FORMULA record whose cached number is a NaN
+  with a non-zero fraction, followed by a STRING (0x33) record holding the text.
+- That version writes relative offsets sign-extended to 14 bits (a column one to
+  the left is 0xBFFF); the older sample files use 8 bits for columns and 13 for
+  rows with zero fill.  Both are read; this program writes the older form.
+- The `Text` format and the `+/-` format are left-aligned.  Time formats D6 to
+  D9, the 29-Feb-1900 display and `Hidden` match.

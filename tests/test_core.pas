@@ -744,6 +744,25 @@ begin
   CheckStr(txt, '@SUM(C4..O4)', 'sample range text');
   Check(not DecodeFormula(Bytes('05010003'), 1, 1, txt) = False, 'integer constant');
   Check(DecodeFormula(Bytes('020680068006800680' + '7003'), 1, 1, txt) and (txt = '@N(G7)'), 'a range of one cell reads back as a cell');
+  { function codes as stored by the original program (a worksheet it saved) }
+  Check(DecodeFormula(Bytes('056400' + '007B14AE47E17A843F' + '05B004' + '75' + '03'), 1, 1, txt), 'TERM decodes');
+  CheckStr(txt, '@TERM(100,0.01,1200)', 'TERM is code 117');
+  Check(DecodeFormula(Bytes('05D007' + '05E803' + '050A00' + '74' + '03'), 3, 1, txt), 'RATE decodes');
+  CheckStr(txt, '@RATE(2000,1000,10)', 'RATE is code 116');
+  Check(DecodeFormula(Bytes('05E803' + '056400' + '050900' + '77' + '03'), 4, 1, txt), 'SLN decodes');
+  CheckStr(txt, '@SLN(1000,100,9)', 'SLN is code 119');
+  Check(DecodeFormula(Bytes('05E803' + '056400' + '050300' + '050100' + '78' + '03'), 5, 1, txt), 'SYD decodes');
+  CheckStr(txt, '@SYD(1000,100,3,1)', 'SYD is code 120');
+  Check(DecodeFormula(Bytes('05E803' + '056400' + '050500' + '050100' + '79' + '03'), 6, 1, txt), 'DDB decodes');
+  CheckStr(txt, '@DDB(1000,100,5,1)', 'DDB is code 121');
+  Check(DecodeFormula(Bytes('00' + '9A9999999999B93F' + '05D007' + '05E803' + '76' + '03'), 2, 1, txt), 'CTERM decodes');
+  CheckStr(txt, '@CTERM(0.1,2000,1000)', 'CTERM is code 118');
+  { a range argument written with 14-bit relative offsets, as that program does }
+  Check(DecodeFormula(Bytes('02FFBFFFBFFFBFFFBF' + '70' + '03'), 2, 2, txt), 'sign-extended 14-bit offsets decode');
+  CheckStr(txt, '@N(A1)', 'N is code 112');
+  Check(DecodeFormula(Bytes('0661646472657373' + '00' + '4F' + '03'), 1, 2, txt), '@CELLPOINTER decodes');
+  CheckStr(txt, '@CELLPOINTER("address")', 'CELLPOINTER is code 79');
+  Check(DecodeFormula(Bytes('37' + '03'), 1, 1, txt) and (txt = '@NOW'), '@NOW is code 55');
   Check(not DecodeFormula(Bytes('7F03'), 1, 1, txt), 'unknown opcode is refused');
   Check(not DecodeFormula(Bytes('0903'), 1, 1, txt), 'operator without operands is refused');
   Check(not DecodeFormula(Bytes('0501000502000003'), 1, 1, txt), 'two values left on the stack is refused');
@@ -1419,7 +1438,6 @@ begin
     info.CursorCol := 1; info.CursorRow := 1; info.LeftCol := 1; info.TopRow := 1;
     msg := SaveWorksheet(dir + '/f.wk1', X.Sheet, False, info, w);
     CheckStr(msg, '', 'save formulas with functions');
-    Check(w.Count >= 1, 'a function without a file code is reported');
     X.Sheet.Reset;
     msg := LoadWorksheet(dir + '/f.wk1', X.Sheet, nil, info);
     CheckStr(msg, '', 'load them back');
@@ -1429,7 +1447,8 @@ begin
     CheckStr(X.Sheet.Find(2, 1).Raw, '@IF(@ISNA(@NA),@LENGTH("abc"),0)', 'nested functions');
     CheckStr(Shown(X, 2, 1), '3', 'nested value');
     CheckStr(X.Sheet.Find(3, 1).Raw, '@@("A1")+@SUM(1,2)', '@@ round trip');
-    CheckStr(X.Sheet.Find(4, 1).Raw, '100', 'a formula with no file code is kept as its value');
+    CheckStr(X.Sheet.Find(4, 1).Raw, '@SLN(1000,100,9)', 'financial functions have file codes now');
+    CheckInt(w.Count, 0, 'so saving them raises no warning');
   finally
     w.Free;
     X.Free;

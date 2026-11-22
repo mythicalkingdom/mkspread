@@ -129,8 +129,8 @@ begin
           SetLength(t, w);
           for k := 1 to w do t[k] := '*';
         end;
-        if EffectiveFormat(cell, S.Sheet).Kind = fkPlusMinus then
-          PutBuf(x, t)                          { +/- bars start at the left }
+        if EffectiveFormat(cell, S.Sheet).Kind in [fkPlusMinus, fkText] then
+          PutBuf(x, t)                          { +/- bars and formula text start at the left }
         else
           PutBuf(x + w - Length(t), t);
       end;

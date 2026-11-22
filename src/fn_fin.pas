@@ -585,11 +585,12 @@ initialization
   SetFuncRangeArgs('DMAX', 5);
   SetFuncRangeArgs('DVAR', 5);
   SetFuncRangeArgs('DSTD', 5);
-  { financial functions of release 2 that the old documents give no file code for }
-  RegisterFunc('TERM', 3, 3, -1, False, @FnTerm);
-  RegisterFunc('CTERM', 3, 3, -1, False, @FnCterm);
-  RegisterFunc('RATE', 3, 3, -1, False, @FnRate);
-  RegisterFunc('SLN', 3, 3, -1, False, @FnSln);
-  RegisterFunc('SYD', 4, 4, -1, False, @FnSyd);
-  RegisterFunc('DDB', 4, 4, -1, False, @FnDdb);
+  { release 2 financial functions; the file codes were read from a worksheet saved
+    by the original program }
+  RegisterFunc('TERM', 3, 3, 117, False, @FnTerm);
+  RegisterFunc('CTERM', 3, 3, 118, False, @FnCterm);
+  RegisterFunc('RATE', 3, 3, 116, False, @FnRate);
+  RegisterFunc('SLN', 3, 3, 119, False, @FnSln);
+  RegisterFunc('SYD', 4, 4, 120, False, @FnSyd);
+  RegisterFunc('DDB', 4, 4, 121, False, @FnDdb);
 end.

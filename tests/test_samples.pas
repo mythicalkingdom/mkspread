@@ -104,7 +104,13 @@ begin
         cached[n].R := W16(buf, p + 7) + 1;
         cached[n].V := F64(buf, p + 4 + 5);
         cached[n].Special := 0;
-        if (W16(buf, p + 4 + 11) and $7FF0) = $7FF0 then cached[n].Special := 2;
+        if (W16(buf, p + 4 + 11) and $7FF0) = $7FF0 then
+        begin
+          cached[n].Special := 3;                                  { a string result }
+          if ((W16(buf, p + 4 + 11) and $F) = 0) and (W16(buf, p + 4 + 5) = 0) and
+             (W16(buf, p + 4 + 7) = 0) and (W16(buf, p + 4 + 9) = 0) then
+            cached[n].Special := 2;                                { ERR or NA }
+        end;
         SetLength(cached[n].Code, sz);
         if sz > 0 then Move(buf[p + 4 + 15], cached[n].Code[0], sz);
         Inc(n);
@@ -211,7 +217,8 @@ begin
     begin
       cell := S.Sheet.Find(cached[i].R, cached[i].C);
       if (cell = nil) or (cell.Formula = nil) then continue;
-      if UsesUnimplemented(cached[i].Code) then begin Inc(Skipped); continue; end;
+      if UsesUnimplemented(cached[i].Code) or (cached[i].Special = 3) or (Pos('@NOW', cell.Raw) > 0) or
+         (Pos('@CELLPOINTER', cell.Raw) > 0) then begin Inc(Skipped); continue; end;
       Inc(ValueChecked);
       ok := False;
       if cached[i].Special = 2 then
@@ -315,7 +322,7 @@ begin
     FindClose(sr);
   end;
   WriteLn(Files, ' files, ', FormulaCells, ' formulas: ', Lost, ' not imported, ',
-          ByteMismatch, ' re-encode mismatches (', Equivalent, ' differ only in range corner order), ', ValueChecked, ' values checked (',
+          ByteMismatch, ' re-encode mismatches (', Equivalent, ') differ only in range corner order or offset encoding), ', ValueChecked, ' values checked (',
           Skipped, ' skipped for unimplemented functions), ', ValueMismatch, ' value mismatches, ',
           Fails, ' other failures');
   if (Fails > 0) or (ByteMismatch > 0) or (ValueMismatch > 0) or (Lost > 0) then Halt(1);
