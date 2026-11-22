@@ -87,7 +87,7 @@ Assumed, not yet checked against real files:
 ## @functions (phase 7)
 All assumptions below are exercised by `MKTEST.WK1` (see `make testsheet`):
 open it in the original program, recalculate, and read the total of
-differences in B3.
+differences in A3.
 - Function names and file opcodes are from the 1985 document, confirmed for
   `@SUM`, `@ROUND` and `@PMT` by sample files.  `@TERM`, `@CTERM`, `@RATE`,
   `@SLN`, `@SYD`, `@DDB` have no known file code: formulas using them are

@@ -1,10 +1,11 @@
 { Generates a worksheet for checking mkspread's behaviour against the original
-  program: open it in 1-2-3, let it recalculate, and look at the total in B3.
+  program: open it in 1-2-3, let it recalculate, and look at the total in A3.
 
-  Every test row has: the test name (A), the live formula (B, recalculated by
-  whatever opens the file), the value mkspread computes (C, stored as a
-  constant) and a check (D: 0 = the two agree, 1 = they differ).  Rows that
-  need a look rather than a number are in the display sections below.
+  Every test row has: a check (A: 0 = the two agree, 1 = they differ), the
+  live formula (C, recalculated by whatever opens the file), the value mkspread
+  computes (D, stored as a constant) and the test name (E); B is a spacer.  The columns are
+  sized so all of them show on an 80-column screen.  Rows that need a look
+  rather than a number are in the display sections below.
 
   Usage: make_testsheet <output.wk1> [section 1..9]
   With a section number only that section's tests are written (to find which
@@ -42,8 +43,8 @@ end;
 procedure T(const desc, f: string);
 begin
   if not Active then exit;
-  S.Sheet.Put(Row, 1, '''' + desc);
-  S.Sheet.Put(Row, 2, f);
+  S.Sheet.Put(Row, 5, ''' ' + desc);
+  S.Sheet.Put(Row, 3, f);
   Kinds[Row] := '?';
   Inc(Row);
 end;
@@ -170,7 +171,7 @@ begin
   T('@DATE(96,2,29)', '@DATE(96,2,29)');
   T('@DATE(96,2,30)', '@DATE(96,2,30)');
   T('@DATE(1996,1,1)  (year must be 0..199?)', '@DATE(1996,1,1)');
-  T('@DATE(0,2,29)  (the 1900 leap-year quirk)', '@DATE(0,2,29)');
+  T('@DATE(0,2,29)  (1900 leap-year quirk)', '@DATE(0,2,29)');
   T('@DAY(35124)', '@DAY(35124)');
   T('@MONTH(35124)', '@MONTH(35124)');
   T('@YEAR(35124)', '@YEAR(35124)');
@@ -233,7 +234,7 @@ begin
   T('@DSUM(P6:Q10,1,R6:R7)  Name = Smith', '@DSUM(P6..Q10,1,R6..R7)');
   T('@DCOUNT(P6:Q10,1,R6:R7)', '@DCOUNT(P6..Q10,1,R6..R7)');
   T('@DSUM with wildcard Sm?th or Jones', '@DSUM(P6..Q10,1,S6..S8)');
-  T('@DAVG with the label criterion >15 (no match: ERR)', '@DAVG(P6..Q10,1,T6..T7)');
+  T('@DAVG, criterion >15 (no match: ERR)', '@DAVG(P6..Q10,1,T6..T7)');
   T('@DMAX Name = Smith', '@DMAX(P6..Q10,1,R6..R7)');
   T('@DMIN Name = Smith', '@DMIN(P6..Q10,1,R6..R7)');
   T('@DSTD Name = Smith', '@DSTD(P6..Q10,1,R6..R7)');
@@ -250,28 +251,28 @@ begin
   for r := firstRow to lastRow do
   begin
     if Kinds[r] <> '?' then continue;
-    cell := S.Sheet.Find(r, 2);
+    cell := S.Sheet.Find(r, 3);
     case cell.Val.Kind of
       vkNum:
         begin
-          S.Sheet.Put(r, 3, NumToRaw(cell.Val.Num));
-          f := Format('@IF(@ISNUMBER(B%d),@IF(@ABS(B%d-C%d)<0.000001,0,1),1)', [r, r, r]);
+          S.Sheet.Put(r, 4, NumToRaw(cell.Val.Num));
+          f := Format('@IF(@ISNUMBER(C%d),@IF(@ABS(C%d-D%d)<0.000001,0,1),1)', [r, r, r]);
         end;
       vkStr:
         begin
-          S.Sheet.Put(r, 3, '''' + cell.Val.Str);
-          f := Format('@IF(@ISSTRING(B%d),@IF(@EXACT(B%d,C%d),0,1),1)', [r, r, r]);
+          S.Sheet.Put(r, 4, '"' + cell.Val.Str);
+          f := Format('@IF(@ISSTRING(C%d),@IF(@EXACT(C%d,D%d),0,1),1)', [r, r, r]);
         end;
       vkNA:
         begin
-          S.Sheet.Put(r, 3, '''NA');
-          f := Format('@IF(@ISNA(B%d),0,1)', [r]);
+          S.Sheet.Put(r, 4, '"NA');
+          f := Format('@IF(@ISNA(C%d),0,1)', [r]);
         end;
     else
-      S.Sheet.Put(r, 3, '''ERR');
-      f := Format('@IF(@ISERR(B%d),0,1)', [r]);
+      S.Sheet.Put(r, 4, '"ERR');
+      f := Format('@IF(@ISERR(C%d),0,1)', [r]);
     end;
-    S.Sheet.Put(r, 4, f);
+    S.Sheet.Put(r, 1, f);
   end;
 end;
 
@@ -282,17 +283,17 @@ var
 
   procedure D(const desc: string; const raw: string; fmt: TCellFormat);
   begin
-    S.Sheet.Put(r, 1, '''' + desc);
-    c := S.Sheet.Put(r, 2, raw);
+    S.Sheet.Put(r, 5, ''' ' + desc);
+    c := S.Sheet.Put(r, 3, raw);
     c.Fmt := fmt;
     c.Fmt.UseGlobal := False;
-    S.Sheet.Put(r, 3, '''' + ValueText(c, S.Sheet, 12));
+    S.Sheet.Put(r, 4, '"' + ValueText(c, S.Sheet, 15));
     Inc(r);
   end;
 
 begin
   r := firstRow;
-  S.Sheet.Put(r, 1, '''--- Display: compare column B with the text in column C (mkspread''s rendering) ---');
+  S.Sheet.Put(r, 1, '''--- Display: compare C (1-2-3) with D (mkspread''s text) ---');
   Inc(r, 2);
   D('Fixed 2: 1234.5678', '1234.5678', MakeFormat(fkFixed, 2));
   D('Fixed 0: 2.5', '2.5', MakeFormat(fkFixed, 0));
@@ -322,11 +323,11 @@ begin
   Inc(r);
   S.Sheet.Put(r, 1, '''--- Labels: prefixes ---');
   Inc(r);
-  S.Sheet.Put(r, 1, '''left (apostrophe)'); S.Sheet.Put(r, 2, '''left'); Inc(r);
-  S.Sheet.Put(r, 1, '''right (quote)'); S.Sheet.Put(r, 2, '"right'); Inc(r);
-  S.Sheet.Put(r, 1, '''center (caret)'); S.Sheet.Put(r, 2, '^center'); Inc(r);
-  S.Sheet.Put(r, 1, '''repeat (backslash)'); S.Sheet.Put(r, 2, '\-='); Inc(r);
-  S.Sheet.Put(r, 1, '''accents (LICS)'); S.Sheet.Put(r, 2, '''caf' + UTF8Encode(WideChar($E9)) + ' ' + UTF8Encode(WideChar($A3)) + UTF8Encode(WideChar($B0)) + UTF8Encode(WideChar($D1)));
+  S.Sheet.Put(r, 5, ''' left (apostrophe)'); S.Sheet.Put(r, 3, '''left'); Inc(r);
+  S.Sheet.Put(r, 5, ''' right (quote)'); S.Sheet.Put(r, 3, '"right'); Inc(r);
+  S.Sheet.Put(r, 5, ''' center (caret)'); S.Sheet.Put(r, 3, '^center'); Inc(r);
+  S.Sheet.Put(r, 5, ''' repeat (backslash)'); S.Sheet.Put(r, 3, '\-='); Inc(r);
+  S.Sheet.Put(r, 5, ''' accents (LICS)'); S.Sheet.Put(r, 3, '''caf' + UTF8Encode(WideChar($E9)) + ' ' + UTF8Encode(WideChar($A3)) + UTF8Encode(WideChar($B0)) + UTF8Encode(WideChar($D1)));
 end;
 
 var
@@ -344,27 +345,28 @@ begin
   Only := 0;
   if ParamCount >= 2 then Only := StrToIntDef(ParamStr(2), 0);
   S := TSession.Create;
-  S.Sheet.SetColWidth(1, 44);
-  S.Sheet.SetColWidth(2, 16);
-  S.Sheet.SetColWidth(3, 16);
-  S.Sheet.SetColWidth(4, 6);
-  S.Sheet.Put(1, 1, '''mkspread test worksheet: open in 1-2-3, recalculate (F9), read the total in B3');
-  S.Sheet.Put(2, 1, '''Column B is live; C is what mkspread computed; D is 0 when they agree, 1 when they differ');
-  S.Sheet.Put(3, 1, '''Total differences (0 = everything agrees):');
-  S.Sheet.Put(5, 1, '''Test'); S.Sheet.Put(5, 2, '''1-2-3 value'); S.Sheet.Put(5, 3, '''mkspread value'); S.Sheet.Put(5, 4, '''Diff');
+  S.Sheet.SetColWidth(1, 4);
+  S.Sheet.SetColWidth(2, 1);
+  S.Sheet.SetColWidth(3, 15);
+  S.Sheet.SetColWidth(4, 15);
+  S.Sheet.SetColWidth(5, 41);
+  S.Sheet.Put(1, 1, '''mkspread test sheet: recalculate (F9); total of differences in A3');
+  S.Sheet.Put(2, 1, '''A: 0=agree 1=differ  C: 1-2-3 (live)  D: mkspread');
+  S.Sheet.Put(3, 3, '''<- differences (0 = all agree)');
+  S.Sheet.Put(5, 1, '''Dif'); S.Sheet.Put(5, 3, '''1-2-3'); S.Sheet.Put(5, 4, '''mkspread'); S.Sheet.Put(5, 5, '''Test');
   Data;
   Row := 5;
   Tests;
   last := Row - 1;
   FinishTests(6, last);
-  S.Sheet.Put(3, 2, Format('@SUM(D6..D%d)', [last]));
+  S.Sheet.Put(3, 1, Format('@SUM(A6..A%d)', [last]));
   if Only = 0 then Display(last + 3);
   S.Calc.Recalc;
   w := TStringList.Create;
   FillChar(info, SizeOf(info), 0);
-  info.CursorCol := 2; info.CursorRow := 3; info.LeftCol := 1; info.TopRow := 1;
+  info.CursorCol := 1; info.CursorRow := 3; info.LeftCol := 1; info.TopRow := 1;
   msg := SaveWorksheet(ParamStr(1), S.Sheet, False, info, w);
   if msg <> '' then begin WriteLn(msg); Halt(1); end;
   WriteLn(w.Text);
-  WriteLn('wrote ', ParamStr(1), ': ', last - 5, ' test rows, total in B3 = ', S.Sheet.Find(3, 2).Val.Num:0:0);
+  WriteLn('wrote ', ParamStr(1), ': ', last - 5, ' test rows, total in A3 = ', S.Sheet.Find(3, 1).Val.Num:0:0);
 end.

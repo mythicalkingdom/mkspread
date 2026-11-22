@@ -14,7 +14,7 @@ other menu command is still a stub.  Behaviour not yet verified is listed in
 
 To check the engine against the original program, `make testsheet` writes
 `private-samples/MKTEST.WK1`: open it in 1-2-3, recalculate, and read the
-number of differences in B3.
+number of differences in A3.
 
 The file layer is tested against real files: if a `private-samples/` folder
 (git-ignored) holds `.WK1` files, `make test` loads each one, checks every
