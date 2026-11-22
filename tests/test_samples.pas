@@ -114,6 +114,27 @@ begin
   end;
 end;
 
+{ first length seen for each record type }
+procedure RecordLengths(const fn: string; lens: TStringList);
+var
+  fs: TFileStream;
+  buf: TBytes;
+  p, op, ln: Integer;
+begin
+  fs := TFileStream.Create(fn, fmOpenRead or fmShareDenyNone);
+  SetLength(buf, fs.Size);
+  fs.ReadBuffer(buf[0], Length(buf));
+  fs.Free;
+  p := 0;
+  while p + 4 <= Length(buf) do
+  begin
+    op := W16(buf, p);
+    ln := W16(buf, p + 2);
+    if lens.IndexOfName(IntToHex(op, 2)) < 0 then lens.Values[IntToHex(op, 2)] := IntToStr(ln);
+    Inc(p, 4 + ln);
+  end;
+end;
+
 procedure CheckFile(const fn: string);
 var
   S, S2: TSession;
@@ -127,6 +148,7 @@ var
   ok: Boolean;
   maxR, maxC, cnt, cnt2: Integer;
   shown, ep: Integer;
+  ol, nl: TStringList;
   tf: string;
   fo: TFormula;
 begin
@@ -210,6 +232,24 @@ begin
     { save and load again }
     tmp := GetTempDir + 'mkspread_rt.wk1';
     SaveWorksheet(tmp, S.Sheet, False, info, nil);
+    { every record type we write has the length the original program used }
+    ol := TStringList.Create;
+    nl := TStringList.Create;
+    try
+      RecordLengths(fn, ol);
+      RecordLengths(tmp, nl);
+      for k := 0 to nl.Count - 1 do
+      begin
+        i := StrToInt('$' + nl.Names[k]);
+        if i in [$0F, $10, $33, $96, $0B] then continue;      { variable length }
+        if (ol.Values[nl.Names[k]] <> '') and (ol.Values[nl.Names[k]] <> nl.ValueFromIndex[k]) then
+          Fail(Format('%s: record %s is %s bytes in the file, %s from this program',
+                      [ExtractFileName(fn), nl.Names[k], ol.Values[nl.Names[k]], nl.ValueFromIndex[k]]));
+      end;
+    finally
+      ol.Free;
+      nl.Free;
+    end;
     S2 := TSession.Create;
     try
       msg := LoadWorksheet(tmp, S2.Sheet, nil, info);
@@ -234,6 +274,9 @@ begin
             end;
           end;
         if cnt <> cnt2 then Fail(ExtractFileName(fn) + ' round trip: cell count differs');
+        if (S.Sheet.TitleR1 <> S2.Sheet.TitleR1) or (S.Sheet.TitleR2 <> S2.Sheet.TitleR2) or
+           (S.Sheet.TitleC1 <> S2.Sheet.TitleC1) or (S.Sheet.TitleC2 <> S2.Sheet.TitleC2) then
+          Fail(ExtractFileName(fn) + ' round trip: frozen titles differ');
         for i := 1 to 255 do
           if S.Sheet.ColWidth(i) <> S2.Sheet.ColWidth(i) then
           begin

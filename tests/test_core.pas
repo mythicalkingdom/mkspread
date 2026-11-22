@@ -769,6 +769,33 @@ begin
   SysUtils.RemoveDir(d);
 end;
 
+{ the body of the first record of the given type in a file, '' if none }
+function RecordBody(const fn: string; op: Integer): TBytes;
+var
+  fs: TFileStream;
+  buf: TBytes;
+  p, t, ln: Integer;
+begin
+  SetLength(Result, 0);
+  fs := TFileStream.Create(fn, fmOpenRead);
+  SetLength(buf, fs.Size);
+  fs.ReadBuffer(buf[0], Length(buf));
+  fs.Free;
+  p := 0;
+  while p + 4 <= Length(buf) do
+  begin
+    t := buf[p] or (buf[p + 1] shl 8);
+    ln := buf[p + 2] or (buf[p + 3] shl 8);
+    if t = op then
+    begin
+      SetLength(Result, ln);
+      if ln > 0 then Move(buf[p + 4], Result[0], ln);
+      exit;
+    end;
+    Inc(p, 4 + ln);
+  end;
+end;
+
 procedure TestWk1RoundTrip;
 var
   A, B: TSession;
@@ -778,6 +805,7 @@ var
   i: Integer;
   cell: TCell;
   names: array[0..13] of TFormatKind;
+  win: TBytes;
 begin
   dir := TmpDir;
   fn := dir + '/rt.wk1';
@@ -833,6 +861,16 @@ begin
     info.CursorCol := 3; info.CursorRow := 6; info.LeftCol := 1; info.TopRow := 1;
     msg := SaveWorksheet(fn, A.Sheet, False, info, warn);
     CheckStr(msg, '', 'save succeeds');
+    win := RecordBody(fn, 7);
+    CheckInt(Length(win), 32, 'WINDOW1 is 32 bytes');
+    CheckInt(win[24], 4, 'the row-number border is shown (width 4)');
+    CheckInt(win[26], 4, 'the column-letter border is shown (height 4)');
+    CheckInt(win[28], 72, 'window width');
+    CheckInt(win[16], 1, 'title columns are counted in WINDOW1');
+    CheckInt(win[18], 2, 'title rows are counted in WINDOW1');
+    CheckInt(win[20], 0, 'first title column');
+    CheckInt(win[22], 0, 'first title row');
+    CheckStr(ToHex(RecordBody(fn, $2A)), 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', 'the TITLES record is the (unset) print border');
     CheckInt(warn.Count, 0, 'save raised no warnings');
 
     msg := LoadWorksheet(fn, B.Sheet, warn, info);

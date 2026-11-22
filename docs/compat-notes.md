@@ -134,3 +134,14 @@ Confirmed by running the generated worksheets in DOS Lotus:
 - Probable (to be re-checked with the next MKT7.WK1): `@VAR` and `@STD` are
   list functions with an argument-count byte; with one stored as a fixed
   function the original reported "Number stack full".
+
+## File layout fixes found by running files in the original program
+- WINDOW1 (record 7) is 32 bytes; the row-number and column-letter border
+  widths are at offsets 24 and 26 (4 and 4); a zero hides the border.  An
+  earlier version wrote these fields in the wrong order and the original
+  program showed no row numbers or column letters.
+- Frozen worksheet titles are stored in WINDOW1 (title column count at 16,
+  title row count at 18, first title column at 20, first title row at 22), not
+  in the TITLES record, which holds the print borders (written as unset).
+- `tests/test_samples.pas` now also compares the length of every record type
+  this program writes with the same record in each real file.

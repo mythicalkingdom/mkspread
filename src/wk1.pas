@@ -600,6 +600,20 @@ begin
           sh.GlobalFmt.UseGlobal := False;
           v := W16(body, 6);
           if (v >= 1) and (v <= 240) then sh.GlobalWidth := v;
+          { frozen titles live here: counts and where they start }
+          if ln >= 24 then
+          begin
+            if (W16(body, 16) > 0) and (W16(body, 20) + W16(body, 16) <= MaxCol) then
+            begin
+              sh.TitleC1 := W16(body, 20) + 1;
+              sh.TitleC2 := W16(body, 20) + W16(body, 16);
+            end;
+            if (W16(body, 18) > 0) and (W16(body, 22) + W16(body, 18) <= MaxRow) then
+            begin
+              sh.TitleR1 := W16(body, 22) + 1;
+              sh.TitleR2 := W16(body, 22) + W16(body, 18);
+            end;
+          end;
         end;
       8:
         if ln >= 3 then
@@ -615,20 +629,6 @@ begin
           else
             sh.GlobalLabelPrefix := '''';
           end;
-      $2A:
-        if ln >= 16 then
-        begin
-          if (W16(body, 2) < MaxRow) and (W16(body, 6) < MaxRow) and (W16(body, 2) <= W16(body, 6)) then
-          begin
-            sh.TitleR1 := W16(body, 2) + 1;
-            sh.TitleR2 := W16(body, 6) + 1;
-          end;
-          if (W16(body, 8) < MaxCol) and (W16(body, 12) < MaxCol) and (W16(body, 8) <= W16(body, 12)) then
-          begin
-            sh.TitleC1 := W16(body, 8) + 1;
-            sh.TitleC2 := W16(body, 12) + 1;
-          end;
-        end;
       $0B:
         if ln >= 24 then
         begin
@@ -891,6 +891,7 @@ var
   nan: Int64;
   lost: Integer;
   stringCells: Boolean;
+  HasC, HasR: Boolean;
 
   procedure Warn(const s: string);
   begin
@@ -957,21 +958,27 @@ begin
     w.Rec1(5, $FF);        { windows synchronised }
     { WINDOW1 }
     SetLength(b, 0);
-    PutW(b, info.CursorCol - 1);
-    PutW(b, info.CursorRow - 1);
+    PutW(b, Max(info.CursorCol, 1) - 1);
+    PutW(b, Max(info.CursorRow, 1) - 1);
     fmt := FormatToByte(sh.GlobalFmt) and $7F;
     PutB(b, fmt);
     PutB(b, 0);
     PutW(b, sh.GlobalWidth);
     PutW(b, 7);                       { columns shown }
     PutW(b, 20);                      { rows shown }
-    PutW(b, info.LeftCol - 1);
-    PutW(b, info.TopRow - 1);
-    if sh.TitleC2 >= sh.TitleC1 then PutW(b, 0) else PutW(b, 0);
-    PutW(b, 0); PutW(b, 0); PutW(b, 0); PutW(b, 0); PutW(b, 0);
-    PutW(b, 4); PutW(b, 4); PutW(b, 72);
-    PutB(b, 0);
-    if not wks then PutB(b, 0);
+    HasC := (sh.TitleC1 > 0) and (sh.TitleC2 >= sh.TitleC1);
+    HasR := (sh.TitleR1 > 0) and (sh.TitleR2 >= sh.TitleR1);
+    PutW(b, Max(info.LeftCol, 1) - 1);                 { 12: leftmost column shown }
+    PutW(b, Max(info.TopRow, 1) - 1);                  { 14: top row shown }
+    if HasC then PutW(b, sh.TitleC2 - sh.TitleC1 + 1) else PutW(b, 0);   { 16: title columns }
+    if HasR then PutW(b, sh.TitleR2 - sh.TitleR1 + 1) else PutW(b, 0);   { 18: title rows }
+    if HasC then PutW(b, sh.TitleC1 - 1) else PutW(b, 0);                { 20: left title column }
+    if HasR then PutW(b, sh.TitleR1 - 1) else PutW(b, 0);                { 22: top title row }
+    PutW(b, 4);                                        { 24: width of the row-number border (0 hides it) }
+    PutW(b, 4);                                        { 26: height of the column-letter border }
+    PutW(b, 72);                                       { 28: window width }
+    PutB(b, 0);                                        { 30 }
+    if not wks then PutB(b, 0);                        { 31 (release 2 files only) }
     w.Rec(7, b);
     { column widths }
     for c := 1 to MaxCol do
@@ -1019,25 +1026,10 @@ begin
     else
       w.Rec1($29, $27);
     end;
-    { titles: rows range then columns range }
-    SetLength(b, 0);
-    if sh.TitleR2 >= sh.TitleR1 then
-    begin
-      PutW(b, 0); PutW(b, sh.TitleR1 - 1); PutW(b, 0); PutW(b, sh.TitleR2 - 1);
-    end
-    else
-    begin
-      PutW(b, $FFFF); PutW(b, $FFFF); PutW(b, $FFFF); PutW(b, $FFFF);
-    end;
-    if sh.TitleC2 >= sh.TitleC1 then
-    begin
-      PutW(b, sh.TitleC1 - 1); PutW(b, 0); PutW(b, sh.TitleC2 - 1); PutW(b, 0);
-    end
-    else
-    begin
-      PutW(b, $FFFF); PutW(b, $FFFF); PutW(b, $FFFF); PutW(b, $FFFF);
-    end;
-    w.Rec($2A, b);
+    { print borders (/Print Options Borders): not tracked, written as unset.  Frozen
+      worksheet titles are in WINDOW1. }
+    w.Rec($2A, FFBytes(16));
+
     if not wks then
     begin
       w.Rec($66, FFBytes(16));
