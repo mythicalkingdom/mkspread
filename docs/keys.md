@@ -9,7 +9,7 @@ your terminal delivers.
 |-----|---------|-------|
 | Arrows, Home, End, PgUp, PgDn | cursor movement | |
 | Ctrl-Right / Ctrl-Left | big move right / left | xterm, VTE, tmux, PuTTY. Alternatives: Tab / Shift-Tab |
-| F1 .. F10 | HELP, EDIT, NAME, ABS, GOTO, WINDOW, QUERY, TABLE, CALC, GRAPH | |
+| F1 .. F10 | HELP (context help; F1 again for the index), EDIT, NAME, ABS, GOTO, WINDOW, QUERY, TABLE, CALC, GRAPH | |
 | Alt-letter | run macro `\letter` | sent as Esc + letter; works over SSH |
 | Alt-F3 | run a macro chosen from the range names | |
 | Alt-F4 | Undo | Alternative: **Ctrl-U** (many terminals swallow Alt-F4) |

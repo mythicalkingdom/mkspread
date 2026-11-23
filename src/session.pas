@@ -24,7 +24,7 @@ interface
 uses Classes, sheet, menutree, calc;
 
 type
-  TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint, mNames, mFind);
+  TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint, mNames, mFind, mHelp);
 
   TSession = class;
   { A command, or the continuation of a command that asked a question.
@@ -69,6 +69,11 @@ type
 
     { menu navigation: level d shows MenuNodes[d].Kids, highlight MenuIdx[d] }
     MenuDepth: Integer;
+    HelpId: string;                      { the topic on show }
+    HelpScroll: Integer;                 { first body line shown }
+    HelpSel: Integer;                    { selected related topic (or index entry) }
+    HelpBack: TStringList;               { topics visited before this one }
+    HelpReturn: TMode;                   { the mode to go back to }
     ReturnPath: string;                  { a menu to open again when the command is finished }
     MenuNodes: array[0..15] of TMenuNode;
     MenuIdx: array[0..15] of Integer;
@@ -170,6 +175,7 @@ begin
   Menus := BuildMenuTree;
   NameChoices := TStringList.Create;
   FindRows := TList.Create;
+  HelpBack := TStringList.Create;
   ChoiceHelp := TStringList.Create;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
   Data.FillStart := 0; Data.FillStep := 1; Data.FillStop := 8191;

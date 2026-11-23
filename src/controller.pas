@@ -41,6 +41,9 @@ type
     procedure TextPromptKey(k: Integer);
     procedure NamesKey(k: Integer);
     procedure FindKey(k: Integer);
+    procedure HelpKey(k: Integer);
+    procedure OpenHelp;
+    procedure ShowTopic(const id: string; remember: Boolean);
     procedure PromptKey(k: Integer);
     procedure PointKey(k: Integer);
     procedure MenuKey(k: Integer);
@@ -60,7 +63,7 @@ type
 
 implementation
 
-uses keys, cellfmt, formula, menutree, u8edit, cmdfile, cmddata, SysUtils;
+uses keys, cellfmt, formula, menutree, u8edit, cmdfile, cmddata, helpdata, Classes, Math, SysUtils;
 
 { Alt-F3 picked a range name: start it as a macro }
 procedure RunNameChosen(S: TSession; const path: string);
@@ -228,7 +231,6 @@ begin
   end;
   if NavKey(k) then exit;
   case k of
-    kF1: StubKey('F1 (HELP)');
     kF1 + 1: StartEdit;
     kF1 + 2: StubKey('F3 (NAME)');
     kF1 + 3: StubKey('F4 (ABS)');
@@ -409,6 +411,99 @@ begin
     kF1 + 2:
       if FS.PromptFilter <> '' then OpenFileChoices(FS, FS.PromptFilter)
       else FS.OpenNameList;
+  end;
+end;
+
+{ ---------------------------------------------------------------- help }
+
+procedure TController.ShowTopic(const id: string; remember: Boolean);
+begin
+  if HelpIndexOf(id) < 0 then exit;
+  if remember and (FS.HelpId <> '') then FS.HelpBack.Add(FS.HelpId);
+  FS.HelpId := id;
+  FS.HelpScroll := 0;
+  FS.HelpSel := 0;
+end;
+
+{ F1: the topic that fits what is on the screen }
+procedure TController.OpenHelp;
+var
+  id: string;
+begin
+  case FS.Mode of
+    mLabel, mValue: id := 'entry';
+    mEdit, mPrompt: id := 'editing';
+    mMenu: id := HelpForMenu(FS.MenuPath(FS.MenuDepth));
+    mGoto, mPoint, mNames: id := 'ranges';
+    mFind: id := 'm:data query';
+  else
+    id := 'basics';
+  end;
+  FS.HelpReturn := FS.Mode;
+  FS.HelpBack.Clear;
+  FS.HelpId := '';
+  FS.Mode := mHelp;
+  ShowTopic(id, False);
+end;
+
+procedure TController.HelpKey(k: Integer);
+var
+  rel: TStringList;
+  n, i, page: Integer;
+  isIndex: Boolean;
+begin
+  rel := TStringList.Create;
+  try
+    rel.Delimiter := ',';
+    rel.StrictDelimiter := True;
+    i := HelpIndexOf(FS.HelpId);
+    rel.DelimitedText := HelpRelated(i);
+    isIndex := FS.HelpId = 'index';
+    n := 1;
+    for i := 1 to Length(HelpBody(HelpIndexOf(FS.HelpId))) do
+      if HelpBody(HelpIndexOf(FS.HelpId))[i] = #10 then Inc(n);
+    page := FS.GridRows;
+    if page < 5 then page := 5;
+    case k of
+      kEsc, kBreak: FS.Mode := FS.HelpReturn;
+      kF1: if not isIndex then ShowTopic('index', True);
+      kBackspace:
+        if FS.HelpBack.Count = 0 then FS.Mode := FS.HelpReturn
+        else
+        begin
+          FS.HelpId := FS.HelpBack[FS.HelpBack.Count - 1];
+          FS.HelpBack.Delete(FS.HelpBack.Count - 1);
+          FS.HelpScroll := 0;
+          FS.HelpSel := 0;
+        end;
+      kEnter:
+        if (FS.HelpSel >= 0) and (FS.HelpSel < rel.Count) then ShowTopic(rel[FS.HelpSel], True);
+      kDown, kRight, kTab:
+        if isIndex or (k <> kDown) then
+        begin
+          if FS.HelpSel < rel.Count - 1 then Inc(FS.HelpSel);
+        end
+        else if FS.HelpScroll < n - 1 then Inc(FS.HelpScroll);
+      kUp, kLeft, kShiftTab:
+        if isIndex or (k <> kUp) then
+        begin
+          if FS.HelpSel > 0 then Dec(FS.HelpSel);
+        end
+        else if FS.HelpScroll > 0 then Dec(FS.HelpScroll);
+      kPgDn:
+        if isIndex then FS.HelpSel := Min(FS.HelpSel + page, rel.Count - 1)
+        else FS.HelpScroll := Min(FS.HelpScroll + page, n - 1);
+      kPgUp:
+        if isIndex then FS.HelpSel := Max(FS.HelpSel - page, 0)
+        else FS.HelpScroll := Max(FS.HelpScroll - page, 0);
+      kHome:
+        begin
+          FS.HelpScroll := 0;
+          FS.HelpSel := 0;
+        end;
+    end;
+  finally
+    rel.Free;
   end;
 end;
 
@@ -763,6 +858,7 @@ begin
   { STEP (Alt-F2) and LEARN (Alt-F5) switch on and off whatever the mode }
   if k = kAltF1 + 1 then begin FS.StepOn := not FS.StepOn; exit; end;
   if k = kAltF1 + 4 then begin FS.Msg := ''; FS.ToggleLearn; exit; end;
+  if (k = kF1) and (FS.Mode <> mHelp) then begin FS.Msg := ''; OpenHelp; exit; end;
   FS.Msg := '';
   FEnd := FS.EndMode;
   if k <> kEnd then FS.EndMode := False;
@@ -776,6 +872,7 @@ begin
     mPoint: PointKey(k);
     mNames: NamesKey(k);
     mFind: FindKey(k);
+    mHelp: HelpKey(k);
   end;
   if (FS.Mode = mReady) and (FS.ReturnPath <> '') then
   begin

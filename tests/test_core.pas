@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
+uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata;
 
 var
   Fails, Total: Integer;
@@ -2866,6 +2866,76 @@ begin
   Cmds.Free;
 end;
 
+procedure TestHelp;
+var
+  i, j, n: Integer;
+  rel, lines: TStringList;
+  txt: string;
+  ok, okLen, okWords, okLines, okUnique: Boolean;
+  S: TSession;
+  Cmds: TCommands;
+  Ctl: TController;
+begin
+  ok := True; okLen := True; okWords := True; okLines := True; okUnique := True;
+  rel := TStringList.Create;
+  lines := TStringList.Create;
+  rel.Delimiter := ',';
+  rel.StrictDelimiter := True;
+  for i := 0 to HelpCount - 1 do
+  begin
+    rel.DelimitedText := HelpRelated(i);
+    for j := 0 to rel.Count - 1 do
+      if HelpIndexOf(rel[j]) < 0 then begin ok := False; WriteLn('help: ', HelpId(i), ' links to missing ', rel[j]); end;
+    if HelpIndexOf(HelpId(i)) <> i then begin okUnique := False; WriteLn('help: duplicate id ', HelpId(i)); end;
+    lines.Text := HelpBody(i);
+    if lines.Count > 20 then begin okLines := False; WriteLn('help: too many lines in ', HelpId(i)); end;
+    for j := 0 to lines.Count - 1 do
+      if Length(lines[j]) > 78 then begin okLen := False; WriteLn('help: long line in ', HelpId(i), ': ', lines[j]); end;
+    txt := UpperCase(HelpTitle(i) + HelpBody(i));
+    if (Pos('1-2-3', txt) > 0) or (Pos('LOTUS', txt) > 0) then begin okWords := False; WriteLn('help: trademark in ', HelpId(i)); end;
+  end;
+  Check(ok, 'every related topic exists');
+  Check(okUnique, 'topic ids are unique');
+  Check(okLen, 'help lines fit the screen');
+  Check(okLines, 'topics fit one screen');
+  Check(okWords, 'no trademarked names in help');
+  CheckStr(HelpForMenu('Range Format Fixed'), 'm:range format', 'help for a menu choice');
+  CheckStr(HelpForMenu('Data Sort Go'), 'm:data sort', 'help for a menu choice, deeper');
+  CheckStr(HelpForMenu('Copy'), 'm:copy', 'help for Copy');
+  CheckStr(HelpForMenu('Nothing Here'), 'menus', 'help falls back to the menus topic');
+  rel.Free;
+  lines.Free;
+
+  S := TSession.Create;
+  Cmds := TCommands.Create;
+  RegisterCoreCommands(Cmds);
+  Ctl := TController.Create(S, Cmds);
+  Ctl.HandleKey(kF1);
+  Check(S.Mode = mHelp, 'F1 opens help');
+  CheckStr(S.HelpId, 'basics', 'READY help is the overview');
+  Ctl.HandleKey(kF1);
+  CheckStr(S.HelpId, 'index', 'F1 again shows the index');
+  Ctl.HandleKey(kDown);
+  Ctl.HandleKey(kEnter);
+  CheckStr(S.HelpId, 'screen', 'Enter follows the selected topic');
+  Ctl.HandleKey(kBackspace);
+  CheckStr(S.HelpId, 'index', 'Backspace goes back');
+  Ctl.HandleKey(kEsc);
+  Check(S.Mode = mReady, 'Esc leaves help');
+  Ctl.HandleKey(Ord('/'));
+  Ctl.HandleKey(kRight);
+  Ctl.HandleKey(kF1);
+  CheckStr(S.HelpId, 'm:range', 'F1 in the menu explains the highlighted choice');
+  Ctl.HandleKey(kEsc);
+  Check(S.Mode = mMenu, 'Esc returns to the menu');
+  Ctl.HandleKey(kBreak);
+  Ctl.HandleKey(Ord('1'));
+  Ctl.HandleKey(kF1);
+  CheckStr(S.HelpId, 'entry', 'F1 while typing');
+  Ctl.HandleKey(kEsc);
+  CheckStr(S.Entry, '1', 'the entry is still there after help');
+end;
+
 begin
   TestSheet;
   TestJournal;
@@ -2887,6 +2957,7 @@ begin
   TestMenus;
   TestKeys;
   TestController;
+  TestHelp;
   WriteLn(Total - Fails, '/', Total, ' checks passed');
   if Fails > 0 then Halt(1);
 end.

@@ -32,7 +32,7 @@ type
 
 implementation
 
-uses terminal, sheet, cellfmt, menutree, u8edit, SysUtils;
+uses terminal, sheet, cellfmt, menutree, u8edit, helpdata, Classes, SysUtils;
 
 const
   MinW = 80;
@@ -162,6 +162,81 @@ begin
   TermPut(1, 3, taNormal, PadR(kid.PanelText, MinW));
 end;
 
+procedure DrawHelp(S: TSession; w, h: Integer);
+var
+  i, k, x, y, first, rows, idx, wd: Integer;
+  rel, lines: TStringList;
+  body: string;
+  a: TAttr;
+begin
+  idx := HelpIndexOf(S.HelpId);
+  if idx < 0 then exit;
+  rel := TStringList.Create;
+  lines := TStringList.Create;
+  try
+    rel.Delimiter := ',';
+    rel.StrictDelimiter := True;
+    rel.DelimitedText := HelpRelated(idx);
+    lines.Text := HelpBody(idx);
+    TermPut(1, 1, taNormal, PadR(' ' + HelpTitle(idx), w - 5));
+    TermPut(w - 3, 1, taHi, 'HELP');
+    rows := h - 5;
+    for y := 2 to h do TermPut(1, y, taNormal, StringOfChar(' ', w));
+    y := 3;
+    for i := S.HelpScroll to lines.Count - 1 do
+    begin
+      if y - 3 >= rows then break;
+      TermPut(2, y, taNormal, Copy(lines[i], 1, w - 2));
+      Inc(y);
+    end;
+    if S.HelpId = 'index' then
+    begin
+      { one topic per line, in two columns when there are many }
+      y := 3 + lines.Count + 1;
+      rows := h - 2 - y;
+      if rows < 1 then rows := 1;
+      first := (S.HelpSel div (2 * rows)) * 2 * rows;       { a page holds two columns }
+      for i := first to rel.Count - 1 do
+      begin
+        if i - first >= 2 * rows then break;
+        k := HelpIndexOf(rel[i]);
+        if k < 0 then continue;
+        if i = S.HelpSel then a := taHi else a := taNormal;
+        TermPut(3 + ((i - first) div rows) * 38, y + (i - first) mod rows, a, PadR(HelpTitle(k), 36));
+      end;
+    end
+    else if rel.Count > 0 then
+    begin
+      { related topics on the second line from the bottom: the selected one is lit }
+      first := 0;
+      while first < S.HelpSel do
+      begin
+        wd := 10;
+        for i := first to S.HelpSel do
+          if HelpIndexOf(rel[i]) >= 0 then Inc(wd, Length(HelpTitle(HelpIndexOf(rel[i]))) + 2);
+        if wd <= w then break;
+        Inc(first);
+      end;
+      TermPut(2, h - 2, taNormal, 'See also:');
+      x := 12;
+      for i := first to rel.Count - 1 do
+      begin
+        k := HelpIndexOf(rel[i]);
+        if k < 0 then continue;
+        body := HelpTitle(k);
+        if x + Length(body) > w then break;
+        if i = S.HelpSel then a := taHi else a := taNormal;
+        TermPut(x, h - 2, a, body);
+        Inc(x, Length(body) + 2);
+      end;
+    end;
+    TermPut(2, h, taNormal, 'Esc leave  Backspace previous  F1 index  Enter go  Arrows choose or scroll');
+  finally
+    rel.Free;
+    lines.Free;
+  end;
+end;
+
 procedure TView.Draw(S: TSession);
 var
   w, h, gridW, gridRows, rc, r, c, x, cx, i, n, line, ly: Integer;
@@ -186,6 +261,13 @@ begin
   begin
     w := MinW;
     h := MinH;
+  end;
+  if S.Mode = mHelp then
+  begin
+    S.GridRows := h - 5;
+    DrawHelp(S, w, h);
+    TermRefresh;
+    exit;
   end;
   gridW := w - BorderW;
   gridRows := h - 5;
@@ -239,6 +321,7 @@ begin
     mPoint: mname := 'POINT';
     mNames: mname := 'NAMES';
     mFind: mname := 'FIND';
+    mHelp: mname := 'HELP';
   end;
   TermPut(1, 1, taNormal, PadR(st, w - Length(mname) - 1));
   if S.IndicatorText <> '' then mname := S.IndicatorText;
