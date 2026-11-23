@@ -642,6 +642,8 @@ var
   i: Integer;
 begin
   Result := False;
+  { a macro name: a backslash and one letter or digit, as in \A or \0 }
+  if (Length(s) = 2) and (s[1] = '\') and (UpCase(s[2]) in ['A'..'Z', '0'..'9']) then exit(True);
   if (s = '') or (Length(s) > 15) then exit;
   if not (UpCase(s[1]) in ['A'..'Z', '_']) then exit;
   for i := 2 to Length(s) do

@@ -238,6 +238,7 @@ begin
     mNames: mname := 'NAMES';
   end;
   TermPut(1, 1, taNormal, PadR(st, w - Length(mname) - 1));
+  if S.IndicatorText <> '' then mname := S.IndicatorText;
   TermPut(w - Length(mname) + 1, 1, taHi, mname);
 
   { lines 2-3: control panel }
@@ -284,6 +285,8 @@ begin
           else TermPut(x, 2, taNormal, S.NameChoices[i]);
           Inc(x, Length(S.NameChoices[i]) + 2);
         end;
+        if (not S.ChoiceIsName) and (S.NameIdx < S.ChoiceHelp.Count) then
+          TermPut(1, 3, taNormal, S.ChoiceHelp[S.NameIdx]);
         if S.ChoiceIsName and S.Sheet.FindName(S.NameChoices[S.NameIdx], sel) then
         begin
           es := ColLetter(sel.C1) + IntToStr(sel.R1);
@@ -329,6 +332,7 @@ begin
   { bottom line: clock, message, indicators }
   TermPut(1, h, taNormal, UpperCase(FormatDateTime('dd-mmm-yy hh:nn AM/PM', Now)));
   if S.Msg <> '' then TermPut(23, h, taMsg, PadR(S.Msg, 55));
+  if S.MacroActive then TermPut(w - 32, h, taNormal, 'CMD');
   if S.Calc.NeedsCalc then TermPut(w - 20, h, taNormal, 'CALC');
   if S.Calc.Circular then TermPut(w - 26, h, taNormal, 'CIRC');
   if S.HasUndo then TermPut(w - 14, h, taNormal, 'UNDO');

@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, Classes, Math, fn_time, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
+uses SysUtils, Classes, Math, fn_time, macro, cmdfile, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
 
 var
   Fails, Total: Integer;
@@ -1456,6 +1456,369 @@ begin
   end;
 end;
 
+{ ---- macros ---- }
+var
+  MS: TSession;
+  MC: TController;
+  MM: TMacro;
+  MCmds: TCommands;
+
+procedure NewMacroSession;
+begin
+  if MM <> nil then MM.Free;
+  if MC <> nil then MC.Free;
+  if MCmds <> nil then MCmds.Free;
+  if MS <> nil then MS.Free;
+  MS := TSession.Create;
+  MCmds := TCommands.Create;
+  RegisterCoreCommands(MCmds);
+  MC := TController.Create(MS, MCmds);
+  MM := TMacro.Create(MS);
+end;
+
+{ macro text goes in column K; name it }
+procedure Mac(r: Integer; const text: string);
+begin
+  MS.Sheet.Put(r, 11, '''' + text);
+end;
+
+procedure NameMac(const nm: string; r: Integer);
+begin
+  MS.Sheet.SetName(nm, NormRange(r, 11, r, 11));
+end;
+
+procedure RunMac(const nm: string);
+begin
+  MS.MacroRequest := nm;
+  MM.RunSync(MC);
+end;
+
+{ the user types while the macro waits, the way the main loop does it }
+procedure UserTypes(const s: string);
+var
+  q: TKeyQueue;
+  k: Integer;
+begin
+  q := TKeyQueue.Create;
+  q.PushString(s);
+  while not q.Empty do
+  begin
+    k := q.Pop;
+    if not (MM.Active and MM.UserKey(k)) then MC.HandleKey(k);
+  end;
+  q.Free;
+end;
+
+procedure TestMacros;
+var
+  i: Integer;
+  fs: TFileStream;
+  dir, old: string;
+begin
+  MS := nil; MC := nil; MM := nil; MCmds := nil;
+
+  { names for macros }
+  Check(IsValidName('\A') and IsValidName('\0') and IsValidName('\z'), 'macro names are valid');
+  Check(not IsValidName('\') and not IsValidName('\AB') and not IsValidName('\-'), 'but only a backslash and one character');
+
+  { keystrokes }
+  NewMacroSession;
+  Mac(1, '5~{DOWN}6~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 1, 1), '5', 'macro typed a number');
+  CheckStr(RawAt(MS, 2, 1), '6', 'and a key between');
+  Check(not MM.Active, 'macro ended at the empty cell');
+  Check(not MS.MacroActive, 'CMD indicator is off');
+
+  NewMacroSession;
+  Mac(1, '{DOWN 3}x~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 4, 1), '''x', 'repeat count');
+
+  NewMacroSession;
+  MS.Sheet.Put(1, 1, '1');
+  MS.Sheet.Put(2, 1, '2');
+  Mac(1, '/rfc~A1.A2~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(FormatTag(MS.Sheet.Find(2, 1).Fmt), 'C2', 'menu commands from a macro');
+
+  NewMacroSession;
+  Mac(1, '5~');
+  Mac(2, '{DOWN}7~');
+  MS.Sheet.Put(3, 11, '99');                         { a number ends the macro }
+  Mac(4, '{DOWN}8~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 2, 1), '7', 'macro continues on the next cell down');
+  Check(MS.Sheet.Find(3, 1) = nil, 'and stops at a number');
+
+  { text formulas can be macro lines too }
+  NewMacroSession;
+  MS.Sheet.Put(1, 11, '+"3~"&"{DOWN}4~"');
+  NameMac('\A', 1);
+  MS.Calc.Recalc;
+  RunMac('\A');
+  CheckStr(RawAt(MS, 1, 1), '3', 'a string formula is macro text');
+  CheckStr(RawAt(MS, 2, 1), '4', 'with its keys');
+
+  { escaped braces }
+  NewMacroSession;
+  Mac(1, '{{}x{}}~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 1, 1), '''{x}', 'braces typed with {{} and {}}');
+
+  { BRANCH, IF, QUIT }
+  NewMacroSession;
+  Mac(1, '{BRANCH K5}');
+  Mac(2, '9~');
+  Mac(5, '3~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 1, 1), '3', '{BRANCH}');
+
+  NewMacroSession;
+  Mac(1, '{IF 0}7~');
+  Mac(2, '{DOWN}8~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  Check(MS.Sheet.Find(1, 1) = nil, 'a false {IF} skips the rest of its cell');
+  CheckStr(RawAt(MS, 2, 1), '8', 'and the next cell runs');
+
+  NewMacroSession;
+  MS.Sheet.Put(5, 5, '4');
+  Mac(1, '{IF E5>3}{DOWN}7~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 2, 1), '7', 'a true {IF} on a cell expression');
+
+  NewMacroSession;
+  Mac(1, '5~{QUIT}6~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 1, 1), '5', '{QUIT} stops the macro');
+
+  { LET, PUT, BLANK, CONTENTS }
+  NewMacroSession;
+  Mac(1, '{LET B1,3*4}{LET B2,"hi":string}{LET B3,B1+1}{LET B4,"tx"}{LET B5,hello}');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 1, 2), '12', '{LET} with a formula');
+  CheckStr(RawAt(MS, 2, 2), '''hi', '{LET} with :string');
+  CheckStr(Shown(MS, 3, 2), '13', '{LET} using a cell, recalculated');
+  CheckStr(RawAt(MS, 4, 2), '''tx', '{LET} with a quoted string');
+  CheckStr(RawAt(MS, 5, 2), '''hello', '{LET} with plain text');
+
+  NewMacroSession;
+  MS.Sheet.Put(1, 2, '5');
+  MS.Sheet.Put(2, 2, '6');
+  Mac(1, '{PUT B1,0,1,99}{CONTENTS C1,B2}{BLANK B1}');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 1, 3), '''99', '{CONTENTS} copies the displayed text (after the {PUT})');
+  CheckStr(RawAt(MS, 1, 2), '', '{BLANK} empties the cell');
+  CheckStr(RawAt(MS, 2, 2), '99', '{PUT} stored at an offset');
+
+  { subroutines, with arguments }
+  NewMacroSession;
+  Mac(1, '{SUB}{SUB}');
+  Mac(10, '{DOWN}5~{RETURN}7~');
+  Mac(20, '{ADD 3,4}');
+  Mac(40, '{DEFINE B1,B2}{LET B3,B1+B2}{RETURN}');
+  NameMac('\A', 1);
+  NameMac('SUB', 10);
+  NameMac('ADD', 40);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 2, 1), '5', 'subroutine called');
+  CheckStr(RawAt(MS, 3, 1), '5', 'and called again');
+  Check(MS.Sheet.Find(1, 1) = nil, '{RETURN} skips the rest of the routine');
+  NameMac('\B', 20);
+  RunMac('\B');
+  CheckStr(Shown(MS, 3, 2), '7', '{DEFINE} receives the arguments');
+
+  { FOR }
+  NewMacroSession;
+  Mac(1, '{FOR B1,1,3,1,K20}');
+  Mac(20, '{DOWN}x~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 2, 1), '''x', 'FOR pass one');
+  CheckStr(RawAt(MS, 3, 1), '''x', 'FOR pass two');
+  CheckStr(RawAt(MS, 4, 1), '''x', 'FOR pass three');
+  Check(MS.Sheet.Find(5, 1) = nil, 'FOR stops after the last');
+  CheckStr(RawAt(MS, 1, 2), '4', 'the counter ends past the limit');
+
+  NewMacroSession;
+  Mac(1, '{FOR B1,1,10,1,K20}{DOWN}end~');
+  Mac(20, '{DOWN}x~{IF B1=2}{FORBREAK}');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 3, 1), '''x', 'FORBREAK: second pass ran');
+  CheckStr(RawAt(MS, 4, 1), '''end', 'then the macro went on after the {FOR}');
+  Check(MS.Sheet.Find(5, 1) = nil, 'and the loop did not run again');
+
+  { pauses: {?}, GETLABEL, GETNUMBER, GET }
+  NewMacroSession;
+  Mac(1, '{?}{DOWN}9~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  Check(MM.Active and not MM.Running, '{?} waits for the user');
+  UserTypes('ab');
+  Check(MM.Active and not MM.Running, 'still waiting until Enter');
+  UserTypes(#13);
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 1, 1), '''ab', 'what the user typed during {?}');
+  CheckStr(RawAt(MS, 2, 1), '9', 'the macro went on after Enter');
+
+  NewMacroSession;
+  Mac(1, '{GETLABEL Name: ,B1}{GETNUMBER Qty: ,B2}{DOWN}done~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  Check(MS.Mode = mPrompt, 'GETLABEL shows its prompt');
+  CheckStr(MS.PromptText, 'Name:', 'with the macro''s text');
+  UserTypes('Ann' + #13);
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 1, 2), '''Ann', 'GETLABEL stored a label');
+  Check(MS.Mode = mPrompt, 'GETNUMBER prompts next');
+  UserTypes('2+3' + #13);
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 2, 2), '5', 'GETNUMBER stored the value');
+  CheckStr(RawAt(MS, 2, 1), '''done', 'the macro finished');
+
+  NewMacroSession;
+  Mac(1, '{GET B1}{DOWN}x~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  UserTypes('q');
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 1, 2), '''q', '{GET} stores the key');
+  CheckStr(RawAt(MS, 2, 1), '''x', 'and the macro goes on');
+  Check(MS.Sheet.Find(1, 1) = nil, 'the key was not typed into the worksheet');
+
+  { menus }
+  NewMacroSession;
+  Mac(1, '{MENUBRANCH K30}');
+  MS.Sheet.Put(30, 11, '''One'); MS.Sheet.Put(30, 12, '''Two');
+  MS.Sheet.Put(31, 11, '''first choice'); MS.Sheet.Put(31, 12, '''second choice');
+  MS.Sheet.Put(32, 11, '''{DOWN}1~'); MS.Sheet.Put(32, 12, '''{DOWN 2}2~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  Check(MS.Mode = mNames, 'MENUBRANCH shows a menu');
+  CheckStr(MS.NameChoices.CommaText, 'One,Two', 'with the items from the row');
+  CheckStr(MS.ChoiceHelp[1], 'second choice', 'and their descriptions');
+  UserTypes('t');
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 3, 1), '2', 'the item chosen by its first letter ran its macro');
+
+  NewMacroSession;
+  Mac(1, '{MENUCALL K30}{DOWN}after~');
+  MS.Sheet.Put(30, 11, '''One');
+  MS.Sheet.Put(32, 11, '''{DOWN}1~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  UserTypes(#13);
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 2, 1), '1', 'MENUCALL runs the choice');
+  CheckStr(RawAt(MS, 3, 1), '''after', 'and returns to the line after it');
+  NewMacroSession;
+  Mac(1, '{MENUBRANCH K30}x~');
+  MS.Sheet.Put(30, 11, '''One');
+  MS.Sheet.Put(32, 11, '''5~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  UserTypes(#27);
+  MM.RunSync(MC);
+  Check(not MM.Active, 'Esc in a macro menu ends the macro');
+
+  { starting macros }
+  NewMacroSession;
+  Mac(1, '{DOWN}z~');
+  NameMac('\Z', 1);
+  MC.HandleKey(MakeAlt('z'));
+  CheckStr(MS.MacroRequest, '\Z', 'Alt-letter asks for macro \Z');
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 2, 1), '''z', 'and it ran');
+  MC.HandleKey(MakeAlt('q'));
+  CheckStr(MS.Msg, 'No macro \Q is defined', 'Alt-letter without a macro says so');
+
+  NewMacroSession;
+  Mac(1, '{DOWN}w~');
+  NameMac('RUNME', 1);
+  NameMac('\A', 1);
+  MC.HandleKey(kAltF1 + 2);
+  Check(MS.Mode = mNames, 'Alt-F3 lists the range names');
+  CheckStr(MS.NameChoices.CommaText, '\A,RUNME', 'macro names included');
+  MC.HandleKey(kRight);
+  MC.HandleKey(kEnter);
+  CheckStr(MS.MacroRequest, 'RUNME', 'the chosen name is the macro to run');
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 2, 1), '''w', 'Alt-F3 ran it');
+
+  NewMacroSession;
+  MC.HandleKey(MakeAlt('a'));
+  Check(MS.MacroRequest = '', 'no request for an undefined macro');
+
+  { runaway and unknown commands }
+  NewMacroSession;
+  Mac(1, '{BRANCH K1}');
+  NameMac('\A', 1);
+  RunMac('\A');
+  Check(not MM.Active, 'a macro that loops without typing is stopped');
+  Check(Pos('loops', MS.Msg) > 0, 'with an explanation');
+
+  NewMacroSession;
+  Mac(1, '5~{FROBNICATE}6~');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 1, 1), '5', 'keys before an unknown command ran');
+  Check(Pos('FROBNICATE', MS.Msg) > 0, 'an unknown command is reported');
+  Check(not MM.Active, 'and ends the macro');
+
+  NewMacroSession;
+  Mac(1, '{INDICATE WAIT}{?}');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(MS.IndicatorText, 'WAIT', '{INDICATE} sets the mode indicator');
+  MM.Stop;
+  CheckStr(MS.IndicatorText, '', 'cleared when the macro ends');
+
+  NewMacroSession;
+  Mac(1, '5~');
+  NameMac('\A', 1);
+  MM.Start(1, 11);
+  MC.HandleKey(kBreak);
+  Check(MM.UserKey(kBreak) or True, 'break key handled');
+  Check(not MM.Active, 'Ctrl-Break stops a macro');
+
+  { \0 runs when a file is retrieved }
+  dir := TmpDir;
+  old := GetCurrentDir;
+  SetCurrentDir(dir);
+  try
+    NewMacroSession;
+    Mac(1, '{DOWN}auto~');
+    NameMac('\0', 1);
+    MS.Sheet.Put(1, 1, '''x');
+    MC.HandleKey(Ord('/'));
+    MC.HandleKey(Ord('f'));
+    MC.HandleKey(Ord('s'));
+    for i := 1 to 4 do MC.HandleKey(Ord('m'));
+    MC.HandleKey(kEnter);
+    MS.Sheet.Reset;
+    CheckStr(RetrieveFile(MS, 'mmmm.WK1'), '', 'retrieve the file');
+    CheckStr(MS.MacroRequest, '\0', 'retrieving a file with \0 requests it');
+    MM.RunSync(MC);
+    CheckStr(RawAt(MS, 2, 1), '''auto', 'the autoexec macro ran');
+  finally
+    SetCurrentDir(old);
+    CleanDir(dir);
+  end;
+  MM.Free; MC.Free; MCmds.Free; MS.Free;
+end;
+
 { ---- dates (serial numbers, including the 1900 leap-year quirk) ---- }
 procedure TestDates;
 var
@@ -1995,6 +2358,7 @@ begin
   TestFormulas;
   TestEditOps;
   TestFunctions;
+  TestMacros;
   TestCharsets;
   TestFormatBytes;
   TestRpn;

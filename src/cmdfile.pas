@@ -160,6 +160,7 @@ function RetrieveFile(S: TSession; const fileName: string): string;
 var
   warn: TStringList;
   info: TFileInfo;
+  g: TRange;
 begin
   warn := TStringList.Create;
   try
@@ -173,6 +174,7 @@ begin
     S.TopRow := 1;
     S.Calc.Recalc;
     S.Normalize;
+    if S.Sheet.FindName('\0', g) then S.MacroRequest := '\0';       { autoexec macro }
     if warn.Count > 0 then
     begin
       S.Msg := warn[0];

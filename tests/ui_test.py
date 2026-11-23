@@ -85,7 +85,7 @@ s.send('\x1b[1;5C')  # Ctrl-Right (xterm)
 check(s.line(1).startswith('S4:') or s.line(1).startswith('T4:') or s.line(1)[0] in 'MNOPQRSTU',
       'Ctrl-Right moves a screen right', s.line(1))
 s.send('\x1bx')      # Alt-X
-check('Alt-X' in s.line(25), 'Alt-letter recognised', s.line(25))
+check('No macro \\X is defined' in s.line(25), 'Alt-letter recognised', s.line(25))
 s.send('\x1bOS')     # F4 (xterm)
 check('F4' in s.line(25), 'F4 recognised', s.line(25))
 s.send('\x1b[1;3S')  # Alt-F4
@@ -257,6 +257,21 @@ try:
     check('Not a worksheet file' in out, 'a bad file on the command line is reported', out)
 finally:
     shutil.rmtree(d, ignore_errors=True)
+
+# ---- phase 8: macros on screen ----
+s = run()
+s.send('\x1b[15~k1\r')                         # F5 K1
+s.send("'{DOWN}hi~{DOWN}{?}there~\r")           # macro text: types hi, pauses for the user, then 'there'
+s.send('/rnc\\a\r\r')                          # /Range Name Create \a, range = K1
+s.send('\x1b[15~a1\r')
+s.send('\x1ba')                                  # Alt-A runs \A
+check(s.line(6).startswith('2   hi'), 'macro typed into the worksheet', s.line(6))
+check('CMD' in s.line(25), 'CMD indicator while a macro waits', s.line(25))
+s.send('ab\r')
+check(s.line(7).rstrip().endswith('there') or 'there' in s.line(8), 'macro continued after the user pressed Enter', s.line(7) + s.line(8))
+check('CMD' not in s.line(25), 'CMD indicator gone when the macro ends', s.line(25))
+s.send('/qy', 0.4)
+s.close()
 
 # ---- screen size handling ----
 s = run(rows=20, cols=70)

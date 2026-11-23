@@ -17,7 +17,7 @@
 program mkspread;
 {$mode objfpc}{$H+}
 
-uses SysUtils, keys, terminal, session, commands, controller, view, demo, keytest, cmdfile;
+uses SysUtils, keys, terminal, session, commands, controller, view, demo, keytest, cmdfile, macro;
 
 const
   Version = '0.7 (phase 7: @functions)';
@@ -38,6 +38,8 @@ var
   Ctl: TController;
   V: TView;
   Queue: TKeyQueue;
+  M: TMacro;
+  kb: Integer;
   i: Integer;
   opt: string;
   doDemo, doKeyTest: Boolean;
@@ -70,6 +72,7 @@ begin
   RegisterCoreCommands(Cmds);
   Ctl := TController.Create(S, Cmds);
   Queue := TKeyQueue.Create;
+  M := TMacro.Create(S);
   if doDemo then LoadDemo(S);
   if startFile <> '' then
   begin
@@ -81,17 +84,32 @@ begin
     end;
   end;
 
+  if S.MacroRequest <> '' then M.TakeRequest;       { an autoexec macro in the file }
+
   TermInit;
   try
     if doKeyTest then
       RunKeyTest
     else
       repeat
-        if Queue.Empty then V.Draw(S);
-        if Queue.Empty then
-          Queue.Push(TermReadKey(-1));
-        k := Queue.Pop;
-        Ctl.HandleKey(k);
+        if M.Running then
+        begin
+          { a macro is typing: only Ctrl-Break gets through }
+          kb := TermReadKey(0);
+          if kb = kBreak then
+            M.Stop
+          else if M.NextKey(k) then
+            Ctl.HandleKey(k);
+        end
+        else
+        begin
+          if Queue.Empty then V.Draw(S);
+          if Queue.Empty then
+            Queue.Push(TermReadKey(-1));
+          k := Queue.Pop;
+          if not (M.Active and M.UserKey(k)) then Ctl.HandleKey(k);
+        end;
+        if S.MacroRequest <> '' then M.TakeRequest;
       until S.Quitting;
   finally
     TermDone;

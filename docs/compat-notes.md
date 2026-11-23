@@ -159,3 +159,17 @@ Confirmed by running the generated worksheets in DOS Lotus:
   rows with zero fill.  Both are read; this program writes the older form.
 - The `Text` format and the `+/-` format are left-aligned.  Time formats D6 to
   D9, the 29-Feb-1900 display and `Hidden` match.
+
+## Macros (phase 8)
+Written from knowledge of the classic behaviour; to be checked in the original
+program:
+- A macro ends at the first empty cell or non-text cell; text formulas count as
+  text.
+- `{IF}` false skips the rest of its cell and continues at the next cell down.
+- A bare word in `{LET}` is text unless it names a range.
+- `{GET}` stores the typed character as a label; special keys as `{UP}` etc.
+- Esc in a `{MENUBRANCH}` ends the macro.
+- `{LOOK}` always stores an empty label; `{WAIT}`, `{BEEP}`, `{ONERROR}` do
+  nothing.
+- Keys typed by the user during `{?}` go to the worksheet exactly as typed.
+- Changes made directly by macro commands are not undoable.

@@ -58,6 +58,12 @@ implementation
 
 uses keys, cellfmt, formula, menutree, u8edit, cmdfile, SysUtils;
 
+{ Alt-F3 picked a range name: start it as a macro }
+procedure RunNameChosen(S: TSession; const path: string);
+begin
+  S.MacroRequest := S.NameChoices[S.ChoiceIndex];
+end;
+
 constructor TController.Create(S: TSession; Cmds: TCommands);
 begin
   inherited Create;
@@ -208,6 +214,8 @@ begin
 end;
 
 procedure TController.Ready(k: Integer);
+var
+  g: TRange;
 begin
   if (k = Ord('/')) or (k = Ord('<')) then
   begin
@@ -230,6 +238,10 @@ begin
     kF1 + 7: StubKey('F8 (TABLE)');
     kF1 + 8: FS.Calc.Recalc;
     kF1 + 9: StubKey('F10 (GRAPH)');
+    kAltF1: StubKey('Alt-F1 (COMPOSE)');
+    kAltF1 + 1: StubKey('Alt-F2 (STEP)');
+    kAltF1 + 2:
+      if FS.OpenNameList then FS.ChoiceCont := @RunNameChosen;     { Alt-F3: run a macro }
     kAltF1 + 3: FS.DoUndo;
     kBreak, kEsc, kBackspace: ;
     32..126, 128..kSpecialBase - 1:
@@ -241,7 +253,11 @@ begin
         FS.Entry := UTF8Encode(WideChar(k));
       end;
   else
-    if IsAltLetter(k) then StubKey('Alt-' + AltLetter(k) + ' (macro)');
+    if IsAltLetter(k) then
+    begin
+      if FS.Sheet.FindName('\' + AltLetter(k), g) then FS.MacroRequest := '\' + UpCase(AltLetter(k))
+      else FS.Msg := 'No macro \' + UpCase(AltLetter(k)) + ' is defined';
+    end;
   end;
 end;
 
@@ -387,6 +403,7 @@ end;
 procedure TController.NamesKey(k: Integer);
 var
   n, name: string;
+  i: Integer;
 begin
   n := '';
   case k of
@@ -395,6 +412,16 @@ begin
     kHome: FS.NameIdx := 0;
     kEnd: FS.NameIdx := FS.NameChoices.Count - 1;
     kEsc, kBreak: FS.Mode := FS.NameReturn;
+    33..126:
+      { menu-style choices (not range names) are picked by their first letter }
+      if not FS.ChoiceIsName then
+        for i := 0 to FS.NameChoices.Count - 1 do
+          if (FS.NameChoices[i] <> '') and (UpCase(FS.NameChoices[i][1]) = UpCase(Chr(k))) then
+          begin
+            FS.NameIdx := i;
+            NamesKey(kEnter);
+            break;
+          end;
     kEnter:
       begin
         name := FS.NameChoices[FS.NameIdx];

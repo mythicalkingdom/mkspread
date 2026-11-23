@@ -10,7 +10,8 @@ your terminal delivers.
 | Arrows, Home, End, PgUp, PgDn | cursor movement | |
 | Ctrl-Right / Ctrl-Left | big move right / left | xterm, VTE, tmux, PuTTY. Alternatives: Tab / Shift-Tab |
 | F1 .. F10 | HELP, EDIT, NAME, ABS, GOTO, WINDOW, QUERY, TABLE, CALC, GRAPH | |
-| Alt-letter | macro key | sent as Esc + letter; works over SSH |
+| Alt-letter | run macro `\letter` | sent as Esc + letter; works over SSH |
+| Alt-F3 | run a macro chosen from the range names | |
 | Alt-F4 | Undo | Alternative: **Ctrl-U** (many terminals swallow Alt-F4) |
 | Ctrl-C | Break (leave menu or entry) | |
 | `/` or `<` | open the menu | |

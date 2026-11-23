@@ -74,6 +74,10 @@ type
     ChoiceIndex: Integer;
     PromptFilter: string;               { text prompt for a file: patterns for F3 }
     FileName: string;                   { the file last retrieved or saved }
+    MacroRequest: string;               { name of a macro to start (set by Alt-key, Alt-F3, autoexec) }
+    MacroActive: Boolean;               { a macro is running or paused }
+    IndicatorText: string;              { replaces the mode indicator (macro {INDICATE}) }
+    ChoiceHelp: TStringList;            { a help line per choice, shown on line 3 }
 
     { range selection (POINT mode) }
     PointText: string;
@@ -131,6 +135,7 @@ begin
   Calc := TCalc.Create(Sheet);
   Menus := BuildMenuTree;
   NameChoices := TStringList.Create;
+  ChoiceHelp := TStringList.Create;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
   GridRows := 20;
   GridW := 76;
@@ -139,6 +144,7 @@ end;
 
 destructor TSession.Destroy;
 begin
+  ChoiceHelp.Free;
   NameChoices.Free;
   Menus.Free;
   UndoSet.Free;
@@ -293,6 +299,7 @@ begin
   NameIdx := 0;
   ChoiceIsName := True;
   ChoiceCont := nil;
+  ChoiceHelp.Clear;
   Mode := mNames;
 end;
 
@@ -307,6 +314,7 @@ begin
   ChoiceIsName := False;
   ChoiceCont := cont;
   ChoicePath := path;
+  ChoiceHelp.Clear;
   Mode := mNames;
 end;
 
@@ -317,6 +325,7 @@ begin
   NameIdx := 0;
   ChoiceIsName := False;
   ChoiceCont := nil;
+  ChoiceHelp.Clear;
   Mode := mNames;
 end;
 

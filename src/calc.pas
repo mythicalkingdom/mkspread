@@ -44,6 +44,8 @@ type
     constructor Create(ASheet: TSheet);
     destructor Destroy; override;
     procedure Recalc;                 { everything, now }
+    { the value of a formula in the context of this worksheet (for macros) }
+    function EvalFormula(f: TFormula): TValue;
     { Called after a command: recalculates (automatic) or flags (manual). }
     procedure SheetChanged;
     property Circular: Boolean read FCircular;
@@ -226,6 +228,13 @@ destructor TCalc.Destroy;
 begin
   FSource.Free;
   inherited Destroy;
+end;
+
+function TCalc.EvalFormula(f: TFormula): TValue;
+begin
+  FNaturalPass := True;
+  Inc(FPass);
+  Result := f.Eval(FSource);
 end;
 
 procedure TCalc.Evaluate(cell: TCell);
