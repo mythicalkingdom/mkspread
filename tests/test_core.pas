@@ -1975,11 +1975,11 @@ begin
   PutRows(S, 5, ['''kiwi', '5']);
   CheckStr(SortRows(S.Sheet, NormRange(1, 1, 5, 2), 2, True, 0, True), '', 'sort by the amounts');
   CheckStr(RawAt(S, 1, 1) + ' ' + RawAt(S, 2, 1) + ' ' + RawAt(S, 3, 1) + ' ' + RawAt(S, 4, 1) + ' ' + RawAt(S, 5, 1),
-           '''kiwi ''apple ''fig ''pear ''Apple', 'numbers ascending, empty cell last');
+           '''Apple ''kiwi ''apple ''fig ''pear', 'ascending: empty cell, then numbers');
   SortRows(S.Sheet, NormRange(1, 1, 5, 2), 2, False, 0, True);
-  CheckStr(RawAt(S, 1, 1) + ' ' + RawAt(S, 4, 1) + ' ' + RawAt(S, 5, 1), '''pear ''kiwi ''Apple', 'descending, empty still last');
+  CheckStr(RawAt(S, 1, 1) + ' ' + RawAt(S, 4, 1) + ' ' + RawAt(S, 5, 1), '''pear ''kiwi ''Apple', 'descending is the reverse: empty cell last');
   SortRows(S.Sheet, NormRange(1, 1, 5, 2), 1, True, 0, True);
-  CheckStr(RawAt(S, 1, 1) + ' ' + RawAt(S, 2, 1) + ' ' + RawAt(S, 3, 1), '''Apple ''apple ''fig', 'text in character order (capitals first)');
+  CheckStr(RawAt(S, 1, 1) + ' ' + RawAt(S, 2, 1) + ' ' + RawAt(S, 3, 1), '''apple ''Apple ''fig', 'text ignores case; equal keys keep their order');
   S.Sheet.Clear;
   PutRows(S, 1, ['''b', '2']);
   PutRows(S, 2, ['''a', '2']);
@@ -2044,8 +2044,8 @@ begin
   CheckNear(S, 11, 4, 0.9952229299363057, 'R squared');
   CheckNear(S, 12, 4, 5, 'observations');
   CheckNear(S, 13, 4, 3, 'degrees of freedom');
-  CheckNear(S, 15, 4, 0.75, 'coefficient');
-  CheckNear(S, 16, 4, 0.03, 'standard error of the coefficient');
+  CheckNear(S, 15, 3, 0.75, 'coefficient');
+  CheckNear(S, 16, 3, 0.03, 'standard error of the coefficient');
   CheckStr(RawAt(S, 8, 1), '''Regression Output:', 'report heading');
   CheckStr(RawAt(S, 15, 1), '''X Coefficient(s)', 'coefficient label');
   S.Sheet.Clear;
@@ -2058,8 +2058,8 @@ begin
   end;
   Regression(S.Sheet, NormRange(1, 1, 6, 2), NormRange(1, 3, 6, 3), 10, 1, False);
   CheckNear(S, 11, 4, 1, 'two variables: constant');
-  CheckNear(S, 17, 4, 2, 'first coefficient');
-  CheckNear(S, 17, 5, 3, 'second coefficient');
+  CheckNear(S, 17, 3, 2, 'first coefficient');
+  CheckNear(S, 17, 4, 3, 'second coefficient');
   CheckNear(S, 13, 4, 1, 'R squared of an exact fit');
   S.Sheet.Clear;
   { through the origin }
@@ -2070,7 +2070,7 @@ begin
   end;
   Regression(S.Sheet, NormRange(1, 1, 4, 1), NormRange(1, 2, 4, 2), 10, 1, True);
   CheckNear(S, 11, 4, 0, 'zero intercept: constant');
-  CheckNear(S, 17, 4, 2, 'zero intercept: coefficient');
+  CheckNear(S, 17, 3, 2, 'zero intercept: coefficient');
   CheckNear(S, 15, 4, 3, 'zero intercept: degrees of freedom');
   Check(Regression(S.Sheet, NormRange(1, 1, 3, 1), NormRange(1, 2, 4, 2), 10, 1, False) <> '', 'ranges must match');
   S.Free;
@@ -2272,7 +2272,7 @@ begin
     Go('/dro'); Go('d1'#13);
     Go('/drg');
     CheckStr(Shown(S, 2, 7), '1', 'regression constant through the menu');
-    CheckStr(Shown(S, 8, 7), '2', 'and coefficient');
+    CheckStr(Shown(S, 8, 6), '2', 'and coefficient');
     Go('/dric');
     Check(not S.Data.RegZero, 'Intercept Compute');
     Go('/driz');

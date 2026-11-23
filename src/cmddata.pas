@@ -56,6 +56,9 @@ begin
     S.Msg := 'The stop value must be a number';
     exit;
   end;
+  S.Data.FillStart := S.PendNum[0];
+  S.Data.FillStep := S.PendNum[1];
+  S.Data.FillStop := v.Num;
   S.SaveUndo;
   n := FillRange(S.Sheet, S.PendRange, S.PendNum[0], S.PendNum[1], v.Num);
   if n = 0 then S.Msg := 'Nothing was filled';
@@ -71,7 +74,7 @@ begin
     exit;
   end;
   S.PendNum[1] := v.Num;
-  S.AskText('Stop:', '8191', @FillStop, path);
+  S.AskText('Stop:', NumToRaw(S.Data.FillStop), @FillStop, path);
 end;
 
 procedure FillStart(S: TSession; const path: string);
@@ -84,13 +87,13 @@ begin
     exit;
   end;
   S.PendNum[0] := v.Num;
-  S.AskText('Step:', '1', @FillStep, path);
+  S.AskText('Step:', NumToRaw(S.Data.FillStep), @FillStep, path);
 end;
 
 procedure FillRangeDone(S: TSession; const path: string);
 begin
   S.PendRange := S.Range;
-  S.AskText('Start:', '0', @FillStart, path);
+  S.AskText('Start:', NumToRaw(S.Data.FillStart), @FillStart, path);
 end;
 
 procedure CmdFill(S: TSession; const path: string);
@@ -161,12 +164,12 @@ begin
   end
   else
   begin
-    { the formula is in the corner; row values go in input cell 1, column values in input cell 2 }
+    { the formula is in the corner; the left column's values go in input cell 1, the top row's in input cell 2 }
     for r := t.R1 + 1 to t.R2 do
       for c := t.C1 + 1 to t.C2 do
       begin
-        if not Setv(S.Data.TableIn1.R1, S.Data.TableIn1.C1, CellValueOf(S.Sheet.Find(t.R1, c))) then continue;
-        if not Setv(S.Data.TableIn2.R1, S.Data.TableIn2.C1, CellValueOf(S.Sheet.Find(r, t.C1))) then continue;
+        if not Setv(S.Data.TableIn1.R1, S.Data.TableIn1.C1, CellValueOf(S.Sheet.Find(r, t.C1))) then continue;
+        if not Setv(S.Data.TableIn2.R1, S.Data.TableIn2.C1, CellValueOf(S.Sheet.Find(t.R1, c))) then continue;
         S.Calc.Recalc;
         results[r - t.R1 - 1][c - t.C1 - 1] := CellValueOf(S.Sheet.Find(t.R1, t.C1));
       end;

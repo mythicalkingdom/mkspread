@@ -28,7 +28,7 @@ uses Classes, sheet;
 function FillRange(sh: TSheet; const g: TRange; start, step, stop: Double): Integer;
 
 { Sorts the rows of g by the column keyCol (and keyCol2 when > 0): numbers before
-  text, text in character order, empty cells last. }
+  empty cells, labels (ignoring case), numbers. }
 function SortRows(sh: TSheet; const g: TRange; keyCol: Integer; asc: Boolean;
                   keyCol2: Integer; asc2: Boolean): string;
 
@@ -67,6 +67,8 @@ var
 begin
   Result := 0;
   v := start;
+  for c := g.C1 to g.C2 do        { the original program empties the range first }
+    for r := g.R1 to g.R2 do sh.Remove(r, c);
   for c := g.C1 to g.C2 do
     for r := g.R1 to g.R2 do
     begin
@@ -103,21 +105,33 @@ begin
   end;
 end;
 
-{ < 0, 0, > 0; empty cells always sort last }
+function KindRank(kind: Integer): Integer;
+begin
+  case kind of
+    1: Result := 2;
+    2: Result := 1;
+  else
+    Result := 0;
+  end;
+end;
+
+{ < 0, 0, > 0.  Ascending: empty cells, then labels (ignoring case), then numbers;
+  descending is exactly the reverse (as seen in the original program). }
 function CompareKeys(const a, b: TSortKey; asc: Boolean): Integer;
 begin
-  if (a.Kind = 0) or (b.Kind = 0) then
+  if a.Kind <> b.Kind then
   begin
-    if a.Kind = b.Kind then exit(0);
-    if a.Kind = 0 then exit(1) else exit(-1);
-  end;
-  if a.Kind <> b.Kind then Result := a.Kind - b.Kind
+    { rank: empty 0, text 1, number 2 (Kind: 0 empty, 1 number, 2 text) }
+    Result := KindRank(a.Kind) - KindRank(b.Kind);
+  end
   else if a.Kind = 1 then
   begin
     if a.Num < b.Num then Result := -1 else if a.Num > b.Num then Result := 1 else Result := 0;
   end
+  else if a.Kind = 2 then
+    Result := CompareText(a.Txt, b.Txt)
   else
-    Result := CompareStr(a.Txt, b.Txt);
+    Result := 0;
   if not asc then Result := -Result;
 end;
 
@@ -416,8 +430,8 @@ begin
   sh.Put(toR + 8, toC, '''Std Err of Coef.');
   for l := 0 to k - 1 do
   begin
-    sh.Put(toR + 7, toC + 3 + l, NumToRaw(coef[l]));
-    sh.Put(toR + 8, toC + 3 + l, NumToRaw(se[l]));
+    sh.Put(toR + 7, toC + 2 + l, NumToRaw(coef[l]));
+    sh.Put(toR + 8, toC + 2 + l, NumToRaw(se[l]));
   end;
   Result := '';
 end;

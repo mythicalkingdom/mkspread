@@ -36,6 +36,7 @@ type
 
   { what /Data Sort, Query, Table, Regression and Parse have been told }
   TDataSettings = record
+    FillStart, FillStep, FillStop: Double;   { the last Fill values are the next defaults }
     SortSet: Boolean;
     SortRange: TRange;
     Key1, Key2: Integer;                 { key columns, 0 = none }
@@ -171,6 +172,7 @@ begin
   FindRows := TList.Create;
   ChoiceHelp := TStringList.Create;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
+  Data.FillStart := 0; Data.FillStep := 1; Data.FillStop := 8191;
   GridRows := 20;
   GridW := 76;
   Mode := mReady;

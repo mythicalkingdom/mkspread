@@ -692,7 +692,7 @@ begin
   FS.ReturnPath := '';
   if (Pos('Data Sort ', path) = 1) or (Pos('Data Query ', path) = 1) or
      (Pos('Data Regression ', path) = 1) or (Pos('Data Parse ', path) = 1) then
-    if not path.EndsWith(' Quit') and (path <> 'Data Sort Go') then
+    if not path.EndsWith(' Quit') and (path <> 'Data Sort Go') and (path <> 'Data Regression Go') and (path <> 'Data Parse Go') then
     begin
       p := Pos(' ', Copy(path, 6, MaxInt));
       FS.ReturnPath := Copy(path, 1, 5 + p - 1);

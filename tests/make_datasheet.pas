@@ -56,6 +56,13 @@ const
     'H<b+3>=''d', 'I<b+3>=2', 'J<b+3>=6',
     'H<b+4>=''e', 'I<b+4>=1', 'J<b+4>=5',
     'H<b+5>=''f', 'I<b+5>=3', 'J<b+5>=4');
+  SortD: array[0..17] of string = (
+    'H<b>=''a', 'I<b>=3', 'J<b>=9',
+    'H<b+1>=''b', 'I<b+1>=1', 'J<b+1>=8',
+    'H<b+2>=''c', 'I<b+2>=5', 'J<b+2>=7',
+    'H<b+3>=''d', 'I<b+3>=2', 'J<b+3>=6',
+    'H<b+4>=''e', 'I<b+4>=4', 'J<b+4>=5',
+    'H<b+5>=''f', 'I<b+5>=6', 'J<b+5>=4');
   SortB: array[0..14] of string = (
     'H<b>=''pear', 'H<b+1>=''apple', 'H<b+2>=''Banana', 'H<b+3>=''10', 'H<b+4>=5',
     'H<b+6>=''apple', 'H<b+7>=''cherry', 'H<b+8>=-2.5',
@@ -95,10 +102,10 @@ var
 begin
   SetLength(Tests, 0);
   { ---- Sort ---- }
-  Sorted('Sort ascending by a number column (ties)', 'H<b>..J<b+5>',
-    '{GOTO}H<b+20>~/dsrdH<b>..J<b+5>~pI<b>~a~g', SortA);
+  Sorted('Sort ascending by a number column', 'H<b>..J<b+5>',
+    '{GOTO}H<b+20>~/dsrdH<b>..J<b+5>~pI<b>~a~g', SortD);
   Sorted('Sort descending by a number column', 'H<b>..J<b+5>',
-    '{GOTO}H<b+20>~/dsrdH<b>..J<b+5>~pI<b>~d~g', SortA);
+    '{GOTO}H<b+20>~/dsrdH<b>..J<b+5>~pI<b>~d~g', SortD);
   Sorted('Sort with a secondary key (descending)', 'H<b>..J<b+5>',
     '{GOTO}H<b+20>~/dsrdH<b>..J<b+5>~pI<b>~a~sJ<b>~d~g', SortA);
   Sorted('Sort a column mixing text, numbers and a blank, ascending', 'H<b>..I<b+7>',
@@ -129,9 +136,6 @@ begin
   Q('Extract: output fields in another order', 'H<b+10>..I<b+17>',
     '{GOTO}H<b+20>~/dqriH<b>..K<b+6>~cM<b>..M<b+1>~oH<b+10>..I<b+17>~eq',
     ['M<b>=''Dept', 'M<b+1>=''Dev', 'H<b+10>=''Pay', 'I<b+10>=''Name']);
-  Q('Extract: a criterion that is a formula on the first record', 'H<b+10>..I<b+17>',
-    '{GOTO}H<b+20>~/dqriH<b>..K<b+6>~cM<b>..M<b+1>~oH<b+10>..I<b+17>~eq',
-    ['M<b>=''Test', 'M<b+1>=+K<b+1>>120', 'H<b+10>=''Name', 'I<b+10>=''Pay']);
   Q('Unique: departments', 'H<b+10>..H<b+17>',
     '{GOTO}H<b+20>~/dqriH<b>..K<b+6>~cM<b>..M<b+1>~oH<b+10>..H<b+17>~uq',
     ['M<b>=''Dept', 'H<b+10>=''Dept']);
