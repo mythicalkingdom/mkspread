@@ -233,21 +233,27 @@ begin
   L('LEARN: /Worksheet Learn Range U500..U510, Alt-F5, type some keys,');
   L('   Alt-F5: the keystrokes appear as macro text in U500.');
   S.Sheet.Put(r + 2, 21, '''{GOTO}H400~{?}done~');
-  S.Sheet.SetName('MAN1', NormRange(r + 2, 21, r + 2, 19));
+  S.Sheet.SetName('MAN1', NormRange(r + 2, 21, r + 2, 21));
+  S.Sheet.SetName('\Q', NormRange(r + 2, 21, r + 2, 21));
   S.Sheet.Put(r + 4, 21, '''{GETLABEL Name: ,H401}');
-  S.Sheet.SetName('MAN2', NormRange(r + 4, 21, r + 4, 19));
+  S.Sheet.SetName('MAN2', NormRange(r + 4, 21, r + 4, 21));
+  S.Sheet.SetName('\W', NormRange(r + 4, 21, r + 4, 21));
   S.Sheet.Put(r + 6, 21, '''{GETNUMBER Qty: ,H402}');
-  S.Sheet.SetName('MAN3', NormRange(r + 6, 21, r + 6, 19));
+  S.Sheet.SetName('MAN3', NormRange(r + 6, 21, r + 6, 21));
+  S.Sheet.SetName('\E', NormRange(r + 6, 21, r + 6, 21));
   S.Sheet.Put(r + 8, 21, '''{MENUBRANCH U' + IntToStr(r + 20) + '}');
-  S.Sheet.SetName('MAN4', NormRange(r + 8, 21, r + 8, 19));
+  S.Sheet.SetName('MAN4', NormRange(r + 8, 21, r + 8, 21));
+  S.Sheet.SetName('\T', NormRange(r + 8, 21, r + 8, 21));
   S.Sheet.Put(r + 10, 21, '''{GET H404}');
-  S.Sheet.SetName('MAN5', NormRange(r + 10, 21, r + 10, 19));
+  S.Sheet.SetName('MAN5', NormRange(r + 10, 21, r + 10, 21));
+  S.Sheet.SetName('\Y', NormRange(r + 10, 21, r + 10, 21));
   S.Sheet.Put(r + 12, 21, '''{GOTO}H405~{DOWN}a~{DOWN}b~{DOWN}c~');
-  S.Sheet.SetName('MAN6', NormRange(r + 12, 21, r + 12, 19));
+  S.Sheet.SetName('MAN6', NormRange(r + 12, 21, r + 12, 21));
+  S.Sheet.SetName('\U', NormRange(r + 12, 21, r + 12, 21));
   { the menu for MAN4 }
-  S.Sheet.Put(r + 20, 21, '''One'); S.Sheet.Put(r + 20, 20, '''Two');
-  S.Sheet.Put(r + 21, 21, '''first choice'); S.Sheet.Put(r + 21, 20, '''second choice');
-  S.Sheet.Put(r + 22, 21, '''{GOTO}H403~1~'); S.Sheet.Put(r + 22, 20, '''{GOTO}H403~2~');
+  S.Sheet.Put(r + 20, 21, '''One'); S.Sheet.Put(r + 20, 22, '''Two');
+  S.Sheet.Put(r + 21, 21, '''first choice'); S.Sheet.Put(r + 21, 22, '''second choice');
+  S.Sheet.Put(r + 22, 21, '''{GOTO}H403~1~'); S.Sheet.Put(r + 22, 22, '''{GOTO}H403~2~');
 end;
 
 var
@@ -259,6 +265,7 @@ var
   w: TStringList;
   msg: string;
   last, i: Integer;
+  g: TRange;
 begin
   if ParamCount < 1 then
   begin
@@ -306,6 +313,18 @@ begin
   S2.Sheet.Put(3, 23, Format('''{IF @INDEX(A7..A%d,0,X2-7)=1}{LET X1,X1+1}{PUT Y7..Z300,0,X1-1,X2}{PUT Y7..Z300,1,X1-1,@INDEX(E7..E%d,0,X2-7)}', [last, last]));
   S2.Sheet.SetName('\D', NormRange(1, 23, 1, 23));
   S2.Sheet.SetName('DCHK', NormRange(3, 23, 3, 23));
+  { every macro the instructions mention must exist and start where it should }
+  for i := 1 to Length('RDQWETYU') do
+    if not S2.Sheet.FindName('\' + Copy('RDQWETYU', i, 1), g) then
+    begin
+      WriteLn('macro name \', Copy('RDQWETYU', i, 1), ' is missing');
+      Halt(1);
+    end
+    else if not S2.Sheet.NonEmpty(g.R1, g.C1) then
+    begin
+      WriteLn('macro \', Copy('RDQWETYU', i, 1), ' points at an empty cell');
+      Halt(1);
+    end;
   S2.Calc.Recalc;
   w := TStringList.Create;
   FillChar(info, SizeOf(info), 0);

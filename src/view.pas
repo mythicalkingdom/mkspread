@@ -167,6 +167,8 @@ var
   w, h, gridW, gridRows, rc, r, c, x, cx, i, n, line: Integer;
   cols, rowsList: TIntArray;
   st, mname, es: string;
+  p: Integer;
+  stp: string;
   cell: TCell;
   sel: TRange;
 begin
@@ -333,7 +335,15 @@ begin
   { bottom line: clock, message, indicators }
   TermPut(1, h, taNormal, UpperCase(FormatDateTime('dd-mmm-yy hh:nn AM/PM', Now)));
   if S.Msg <> '' then TermPut(23, h, taMsg, PadR(S.Msg, 55))
-  else if S.StepInfo <> '' then TermPut(20, h, taMsg, PadR(S.StepInfo, 40));
+  else if (S.StepInfo <> '') and not (S.Mode in [mMenu, mNames]) then
+    TermPut(1, 3, taMsg, PadR(S.StepInfo, w))          { line 3 is free: show the whole macro line }
+  else if S.StepInfo <> '' then
+  begin
+    { the stepped line, windowed around the > marker so it clears the indicators }
+    p := Pos('>', S.StepInfo);
+    if p > 14 then stp := Copy(S.StepInfo, p - 13, MaxInt) else stp := S.StepInfo;
+    TermPut(20, h, taMsg, PadR(stp, w - 46 - 20));
+  end;
   if S.LearnOn then TermPut(w - 44, h, taNormal, 'LEARN');
   if S.StepOn then TermPut(w - 38, h, taNormal, 'STEP');
   if S.MacroActive then TermPut(w - 32, h, taNormal, 'CMD');

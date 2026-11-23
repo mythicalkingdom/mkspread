@@ -320,6 +320,23 @@ check(s.line(1).endswith('READY'), 'Esc leaves FIND', s.line(1))
 s.send('/qy', 0.4)
 s.close()
 
+# ---- STEP shows the macro line ----
+s = run()
+s.send('\x1b[15~k1\r')
+s.send("'{DOWN}hi~\r")
+s.send('/rnc\\a\r\r')
+s.send('\x1b[15~a1\r')
+s.send('\x1b[1;3Q')                      # Alt-F2: STEP on
+s.send('\x1ba')                           # run \A
+check(s.line(3).startswith('K1: >{DOWN}hi~'), 'STEP shows the macro line with the position', s.line(3))
+check('STEP' in s.line(25) and 'CMD' in s.line(25), 'STEP and CMD indicators', s.line(25))
+s.send('x')
+check(s.line(3).startswith('K1: {DOWN}>hi~'), 'the marker moves one key per step', s.line(3))
+s.send('\x1b[1;3Q')                      # Alt-F2: run on
+check('STEP' not in s.line(25), 'STEP off', s.line(25))
+s.send('/qy', 0.4)
+s.close()
+
 # ---- screen size handling ----
 s = run(rows=20, cols=70)
 check('too small' in s.line(1), 'small terminal message', s.line(1))
