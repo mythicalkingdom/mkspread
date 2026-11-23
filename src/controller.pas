@@ -69,7 +69,7 @@ type
 
 implementation
 
-uses keys, cellfmt, formula, menutree, u8edit, cmdfile, cmddata, helpdata, refedit, Classes, Math, SysUtils;
+uses keys, cellfmt, formula, menutree, u8edit, cmdfile, cmddata, cmdprint, helpdata, refedit, Classes, Math, SysUtils;
 
 { Alt-F3 picked a range name: start it as a macro }
 procedure RunNameChosen(S: TSession; const path: string);
@@ -749,6 +749,16 @@ begin
     TextPromptKey(k);
     exit;
   end;
+  if FS.PromptFresh then
+  begin
+    { the first digit replaces the number offered; Backspace clears it }
+    FS.PromptFresh := False;
+    if ((k >= Ord('0')) and (k <= Ord('9'))) or (k = kBackspace) then
+    begin
+      FS.Entry := '';
+      if k = kBackspace then exit;
+    end;
+  end;
   case k of
     kEnter:
       begin
@@ -880,6 +890,15 @@ begin
   d := FS.MenuDepth;
   FS.MenuIdx[d] := i;
   kid := FS.MenuNodes[d][i];
+  path := FS.MenuPath(d);
+  if (not kid.IsLeaf) and ((path = 'Print Printer') or (path = 'Print File')) then
+  begin
+    { choosing the destination runs a command (file name prompt), then the menu opens }
+    FS.Mode := mReady;
+    FS.ReturnPath := PrintReturnPath(path);
+    FCmds.Run(path, FS);
+    exit;
+  end;
   if not kid.IsLeaf then
   begin
     Inc(FS.MenuDepth);
@@ -888,8 +907,8 @@ begin
     exit;
   end;
   FS.Mode := mReady;
-  path := FS.MenuPath(d);
   FS.ReturnPath := '';
+  if Pos('Print ', path) = 1 then FS.ReturnPath := PrintReturnPath(path);
   if (Pos('Data Sort ', path) = 1) or (Pos('Data Query ', path) = 1) or
      (Pos('Data Regression ', path) = 1) or (Pos('Data Parse ', path) = 1) then
     if not path.EndsWith(' Quit') and (path <> 'Data Sort Go') and (path <> 'Data Regression Go') and (path <> 'Data Parse Go') then
@@ -1009,6 +1028,7 @@ begin
     Reopen(FS.ReturnPath);
     FS.ReturnPath := '';
   end;
+  if (FS.Mode = mReady) and (FS.Print.Pending <> '') then FlushPrint(FS);
   FS.EndChange;
 end;
 

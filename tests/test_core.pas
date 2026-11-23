@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata, refedit;
+uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata, refedit, printing, cmdprint;
 
 var
   Fails, Total: Integer;
@@ -2866,6 +2866,159 @@ begin
   Cmds.Free;
 end;
 
+procedure TestPrint;
+var
+  S: TSession;
+  Cmds: TCommands;
+  Ctl: TController;
+  ps: TPrintSettings;
+  sh: TSheet;
+  err, txt, fn: string;
+  L: TStringList;
+  r, c: Integer;
+  q: TKeyQueue;
+
+  procedure Go(const keys: string);
+  begin
+    q.PushString(keys);
+    while not q.Empty do Ctl.HandleKey(q.Pop);
+  end;
+
+begin
+  sh := TSheet.Create;
+  ResetPrint(ps);
+  ps.Today := '01-Jan-26';
+  sh.Put(1, 1, '''Name');  sh.Put(1, 2, '''Amount');
+  sh.Put(2, 1, '''Ann');   sh.Put(2, 2, '12.5');
+  sh.Put(3, 1, '''Bob');   sh.Put(3, 2, '7');
+  L := TStringList.Create;
+  txt := PrintRangeText(sh, ps, err);
+  CheckStr(err, 'Specify a print range first', 'no range: a message');
+  ps.RangeSet := True;
+  ps.Range := NormRange(1, 1, 3, 2);
+  txt := PrintRangeText(sh, ps, err);
+  L.Text := txt;
+  CheckInt(L.Count, 66, 'one page is 66 lines');
+  CheckStr(L[5], '    Name     Amount', 'the first row after the top margin, header and two blank lines');
+  CheckStr(L[7], '    Bob' + StringOfChar(' ', 14) + '7', 'a number is right-aligned in its column');
+  CheckStr(L[6], '    Ann' + StringOfChar(' ', 11) + '12.5', 'a number shows as General');
+  ps.Header := 'Report|Sales|Page #';
+  ps.Footer := '@';
+  L.Text := PrintRangeText(sh, ps, err);
+  CheckStr(L[2], '    Report' + StringOfChar(' ', 27) + 'Sales' + StringOfChar(' ', 28) + 'Page 1', 'header: left, centre and right parts');
+  CheckStr(L[63], '    01-Jan-26', 'footer with the date');
+  CheckInt(L.Count, 66, 'headers do not change the page length');
+  ps.Header := '';
+  ps.Footer := '';
+  for r := 4 to 130 do sh.Put(r, 1, '''row ' + IntToStr(r));
+  ps.Range := NormRange(1, 1, 130, 1);
+  L.Text := PrintRangeText(sh, ps, err);
+  CheckInt(L.Count, 66 * 3, '130 rows need three pages of 56 lines');
+  CheckStr(L[5], '    Name', 'first line on page one');
+  CheckStr(L[66 + 5], '    row 57', 'page two continues');
+  ps.PgLength := 20;
+  ps.Top := 0;
+  ps.Bottom := 0;
+  L.Text := PrintRangeText(sh, ps, err);
+  CheckInt(L.Count mod 20, 0, 'pages have the page length');
+  CheckStr(L[3], '    Name', 'no top margin: header line, two blanks, then text');
+  { page break row }
+  ResetPrint(ps);
+  ps.Today := '01-Jan-26';
+  sh.Free;
+  sh := TSheet.Create;
+  sh.Put(1, 1, '''one');
+  sh.Put(2, 1, '|::');
+  sh.Put(3, 1, '''two');
+  sh.Put(4, 1, '|a note that is not printed');
+  sh.Put(5, 1, '''three');
+  ps.RangeSet := True;
+  ps.Range := NormRange(1, 1, 5, 1);
+  L.Text := PrintRangeText(sh, ps, err);
+  CheckInt(L.Count, 132, 'a page-break row starts a new page');
+  CheckStr(L[5], '    one', 'before the break');
+  CheckStr(L[71], '    two', 'after the break');
+  CheckStr(L[72], '    three', 'a row starting with | is not printed, the next one is');
+  { column groups: 72 characters per page line }
+  sh.Free;
+  sh := TSheet.Create;
+  for c := 1 to 10 do
+  begin
+    sh.SetColWidth(c, 12);
+    sh.Put(1, c, IntToStr(c));
+  end;
+  ps.Range := NormRange(1, 1, 1, 10);
+  L.Text := PrintRangeText(sh, ps, err);
+  CheckInt(L.Count, 132, 'ten columns of 12 need two pages (six fit in 72)');
+  CheckStr(L[5], StringOfChar(' ', 15) + '1           2           3           4           5           6', 'first columns');
+  CheckStr(L[66 + 5], StringOfChar(' ', 15) + '7           8           9          10', 'the rest on the next page');
+  ps.BorderColsSet := True;
+  ps.BorderCols := NormRange(1, 1, 1, 1);
+  ps.Range := NormRange(1, 2, 1, 10);
+  L.Text := PrintRangeText(sh, ps, err);
+  CheckStr(L[5], StringOfChar(' ', 15) + '1           2           3           4           5           6', 'border column then columns');
+  CheckInt(L.Count, 132, 'the border column leaves room for five columns');
+  ps.BorderColsSet := False;
+  { cell formulas and unformatted }
+  sh.Free;
+  sh := TSheet.Create;
+  sh.Put(1, 1, '5');
+  sh.Put(2, 1, '+A1*2');
+  sh.Put(3, 2, '''hi');
+  ps.Range := NormRange(1, 1, 3, 2);
+  ps.CellFormulas := True;
+  ps.Unformatted := True;
+  L.Text := PrintRangeText(sh, ps, err);
+  CheckInt(L.Count, 3, 'one line per cell');
+  CheckStr(L[1], 'A2: +A1*2', 'the cell contents as the status line shows them');
+  ps.CellFormulas := False;
+  L.Text := PrintRangeText(sh, ps, err);
+  CheckInt(L.Count, 3, 'unformatted: no page structure');
+  CheckStr(L[2], '         hi', 'a label in column B');
+  CheckStr(SetupBytes('\015x\027E'), #15'x'#27'E', 'setup string codes');
+  L.Free;
+  sh.Free;
+
+  { through the commands }
+  fn := TmpDir + '/out.prn';
+  if FileExists(fn) then DeleteFile(fn);
+  S := TSession.Create;
+  Cmds := TCommands.Create;
+  RegisterCoreCommands(Cmds);
+  Ctl := TController.Create(S, Cmds);
+  q := TKeyQueue.Create;
+  S.Sheet.Put(1, 1, '''hello');
+  S.Sheet.Put(2, 1, '42');
+  Go('/pf' + fn + #13);
+  Check(S.Mode = mMenu, 'the print menu opens after choosing File');
+  Go('ra1.a2'#13);
+  Check(S.Mode = mMenu, 'the menu comes back after Range');
+  Go('oml');
+  Go('2'#13);
+  CheckInt(S.Print.Left, 2, 'Options Margins Left');
+  Check(S.Mode = mMenu, 'and the Options menu is open again');
+  Go('q');
+  Go('g');
+  Check(S.Mode = mMenu, 'the menu stays after Go');
+  Go('q');
+  Check(S.Mode = mReady, 'Quit leaves the print menu');
+  Check(FileExists(fn), 'the print file exists');
+  L := TStringList.Create;
+  L.LoadFromFile(fn);
+  CheckStr(L[5], '  hello', 'the printed text, with the margin set');
+  L.Free;
+  S.Print.ToFile := False;
+  fn := TmpDir + '/lp.out';
+  PrintCommandOverride := 'cat > ' + fn;
+  Go('/ppg');
+  Go('q');
+  Check(FileExists(fn), 'the printer command receives the text');
+  PrintCommandOverride := '';
+  Go('/wp');
+  CheckStr(RawAt(S, 1, 1), '|::', '/Worksheet Page inserts a page-break row');
+  CheckStr(RawAt(S, 2, 1), '''hello', 'and moves the data down');
+end;
+
 procedure TestRefEdit;
 var
   s: string;
@@ -2932,6 +3085,8 @@ begin
   CheckStr(HelpForMenu('Range Format Fixed'), 'm:range format', 'help for a menu choice');
   CheckStr(HelpForMenu('Data Sort Go'), 'm:data sort', 'help for a menu choice, deeper');
   CheckStr(HelpForMenu('Copy'), 'm:copy', 'help for Copy');
+  CheckStr(HelpForMenu('Print Printer Options Margins Left'), 'm:print options', 'help inside the print menu');
+  CheckStr(HelpForMenu('Print File Go'), 'm:print', 'help for the print menu');
   CheckStr(HelpForMenu('Nothing Here'), 'menus', 'help falls back to the menus topic');
   rel.Free;
   lines.Free;
@@ -2989,6 +3144,7 @@ begin
   TestController;
   TestHelp;
   TestRefEdit;
+  TestPrint;
   WriteLn(Total - Fails, '/', Total, ' checks passed');
   if Fails > 0 then Halt(1);
 end.

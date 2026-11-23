@@ -66,6 +66,8 @@ var
   k: Integer;
 begin
   p := LowerCase(path);
+  if Pos('print printer', p) = 1 then p := 'print' + Copy(p, 14, MaxInt)
+  else if Pos('print file', p) = 1 then p := 'print' + Copy(p, 11, MaxInt);
   while p <> '' do
   begin
     if HelpIndexOf('m:' + p) >= 0 then exit('m:' + p);
@@ -375,10 +377,40 @@ begin
 
   ;
   T('m:print', 'Print',
-    'Printing is not available yet.  A later version will print through the|' +
-    'system print service with printer setup strings.  File Xtract and Import|' +
-    'can move data in and out in the meantime.',
-    'm:file')
+    'Printer or File chooses where the text goes (File asks for a name; .PRN is|' +
+    'added).  Then:  Range  the cells to print        Line  one blank line|' +
+    '  Page   skip to the next page      Align  paper is at the top of a page|' +
+    '  Go     print the range            Quit   leave (the text is sent now)|' +
+    '  Options  Header, Footer, Margins, Borders, Setup, Pg-Length, Other|' +
+    '  Clear    All, Range, Borders or Format (back to the default layout)|' +
+    'Output for the printer goes to the print command (lp); set the environment|' +
+    'variable MKSPREAD_PRINT_COMMAND to use another, such as lpr -P name.',
+    'm:print options,m:print layout,m:file')
+
+  ;
+  T('m:print options', 'Print Options',
+    'Header / Footer   text for the top and bottom of each page.  Split it with|' +
+    '                  | into left, centre and right parts; # is the page number|' +
+    '                  and @ today''s date:   Report|Sales|Page #|' +
+    'Margins           Left 4, Right 76, Top 2, Bottom 2 (the defaults)|' +
+    'Borders           Columns / Rows printed again on every page|' +
+    'Setup             printer codes sent first; \015 is the byte with decimal|' +
+    '                  code 15, so \027E sends Escape and E|' +
+    'Pg-Length         lines per page (default 66)|' +
+    'Other             As-Displayed or Cell-Formulas; Formatted or Unformatted|' +
+    '                  (Unformatted: no headers, footers or page breaks)',
+    'm:print,m:print layout')
+
+  ;
+  T('m:print layout', 'How pages are laid out',
+    'A page has the top margin, the header, two blank lines, the text (56 lines on|' +
+    'a 66-line page), two blank lines, the footer and the bottom margin.  Text is|' +
+    'as wide as the right margin minus the left margin: wider ranges are printed in|' +
+    'groups of columns, the first group down all the pages, then the next group.|' +
+    'In the print range, a row whose first cell is a label starting with the|' +
+    'vertical bar prefix is not printed, and one that holds |:: starts a new page|' +
+    '(/Worksheet Page puts such a row above the pointer).',
+    'm:print options,m:print')
 
   ;
   T('m:graph', 'Graph',

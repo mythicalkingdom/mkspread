@@ -21,7 +21,7 @@ unit session;
 
 interface
 
-uses Classes, sheet, menutree, calc;
+uses Classes, sheet, menutree, calc, printing;
 
 type
   TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint, mNames, mFind, mHelp);
@@ -117,6 +117,7 @@ type
     Anchored, Typing: Boolean;
     AnchorR, AnchorC: Integer;
     OrigRow, OrigCol, OrigTop, OrigLeft: Integer;
+    Print: TPrintSettings;               { /Print settings and the output not yet sent }
     FPActive: Boolean;                  { pointing at cells while typing a formula }
     FPStart, FPLen: Integer;            { where the reference text is in the entry }
     Range: TRange;                      { result of the last range prompt }
@@ -180,6 +181,8 @@ begin
   HelpBack := TStringList.Create;
   ChoiceHelp := TStringList.Create;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
+  ResetPrint(Print);
+  Print.LinePos := 0;
   Data.FillStart := 0; Data.FillStep := 1; Data.FillStop := 8191;
   GridRows := 20;
   GridW := 76;
@@ -316,6 +319,7 @@ begin
   Entry := IntToStr(def);
   EditPos := Length(Entry);
   PromptIsText := False;
+  PromptFresh := True;
 end;
 
 procedure TSession.AskText(const text, def: string; cont: TCommandProc; const path: string);
