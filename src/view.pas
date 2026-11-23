@@ -32,7 +32,7 @@ type
 
 implementation
 
-uses terminal, sheet, cellfmt, menutree, u8edit, helpdata, Classes, SysUtils;
+uses terminal, sheet, cellfmt, menutree, u8edit, helpdata, dates, DateUtils, Classes, SysUtils;
 
 const
   MinW = 80;
@@ -455,7 +455,11 @@ begin
   end;
 
   { bottom line: clock, message, indicators }
-  TermPut(1, h, taNormal, UpperCase(FormatDateTime('dd-mmm-yy hh:nn AM/PM', Now)));
+  case S.Cfg.Clock of
+    0: TermPut(1, h, taNormal, UpperCase(FormatDateTime('dd-mmm-yy hh:nn AM/PM', Now)));
+    1: TermPut(1, h, taNormal, FormatSerial(DateToSerial(YearOf(Now), MonthOf(Now), DayOf(Now)), 4) +
+                                '  ' + FormatDateTime('hh:nn', Now));
+  end;
   if S.Msg <> '' then TermPut(23, h, taMsg, PadR(S.Msg, 55))
   else if (S.StepInfo <> '') and not (S.Mode in [mMenu, mNames]) then
     TermPut(1, 3, taMsg, PadR(S.StepInfo, w))          { line 3 is free: show the whole macro line }

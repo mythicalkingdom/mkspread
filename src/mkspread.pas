@@ -18,7 +18,7 @@ program mkspread;
 {$mode objfpc}{$H+}
 
 uses SysUtils, DateUtils, StrUtils, keys, terminal, session, commands, controller, view, demo, keytest,
-     cmdfile, macro, version, config, recovery;
+     cmdfile, macro, version, config, recovery, defaults;
 
 procedure Usage;
 begin
@@ -141,7 +141,10 @@ begin
     else startFile := ParamStr(i);
   end;
 
+  ApplyConfig(cfg);
+  if (cfg.Directory <> '') and DirectoryExists(cfg.Directory) then SetCurrentDir(cfg.Directory);
   S := TSession.Create;
+  S.Cfg := cfg;
   Cmds := TCommands.Create;
   RegisterCoreCommands(Cmds);
   Ctl := TController.Create(S, Cmds);

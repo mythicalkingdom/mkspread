@@ -12,6 +12,29 @@
 
 `--autosave=N` and `--expand` on the command line override the file.
 
+`/Worksheet Global Default` changes the settings below while the program runs;
+**Update** writes them all to this file (comments are not kept).  **Status** lists them.
+
+| Key | Meaning | Default |
+|---|---|---|
+| `directory` | folder to start in | (where started) |
+| `print-left`, `print-right`, `print-top`, `print-bottom`, `print-length` | printer margins and page length | 4, 76, 2, 2, 66 |
+| `print-setup` | printer setup string (`\015` is decimal code 15) | empty |
+| `print-name` | CUPS queue for `lp -d` | system default |
+| `print-interface`, `print-autolf`, `print-wait` | kept for compatibility | 1, no, no |
+| `punctuation` | `A`..`H`: decimal, thousands and argument separators (A `. , ,`; B `, . .`; C `. space ,`; D `, space .`; E `. , ;`; F `, . ;`; G `. space ;`; H `, space ;`) | A |
+| `currency`, `currency-position` | currency symbol (up to 4 characters), `prefix` or `suffix` | `$`, prefix |
+| `negative` | `parentheses` or `sign` for negative Currency and Comma numbers | parentheses |
+| `date-format`, `time-format` | `A`..`D`: international formats of D4/D5 and D8/D9 (date A MM/DD/YY, B DD/MM/YY, C DD.MM.YY, D YY-MM-DD; time A HH:MM:SS, B HH.MM.SS, C HH,MM,SS, D HHhMMmSSs) | A, A |
+| `clock` | `standard`, `international` or `none` | standard |
+| `undo`, `beep`, `help` | Undo on/off; beep and help source kept for compatibility | yes, yes, instant |
+
+Numbers are still typed with a decimal point; the punctuation only changes how
+they are shown.
+
+## Quitting
+`/Quit Yes` asks once more when the worksheet has changes that are not in a file.
+
 ## Autosave
 With `autosave` above 0, a worksheet that has a file name and unsaved changes is
 saved to that file at the interval (the screen says `Autosaved NAME`).  A worksheet

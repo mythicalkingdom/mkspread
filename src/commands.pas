@@ -42,7 +42,7 @@ procedure RegisterCoreCommands(C: TCommands);
 
 implementation
 
-uses cmdsheet, cmdedit, cmdfile, cmddata, cmdprint;
+uses cmdsheet, cmdedit, cmdfile, cmddata, cmdprint, cmddefault;
 
 constructor TCommands.Create;
 begin
@@ -81,9 +81,24 @@ begin
   { nothing: just return to READY }
 end;
 
+procedure CmdQuitSure(S: TSession; const path: string);
+begin
+  if S.ChoiceIndex = 1 then S.Quitting := True;
+end;
+
 procedure CmdQuitYes(S: TSession; const path: string);
 begin
-  S.Quitting := True;
+  S.CheckModified;
+  if S.Modified then
+  begin
+    { unsaved changes: ask again }
+    S.AskChoice(['No', 'Yes'], @CmdQuitSure, path);
+    S.ChoiceHelp.Add('Go back to the worksheet');
+    S.ChoiceHelp.Add('Quit now: the changes since the last save are lost');
+    S.Msg := 'The worksheet has unsaved changes';
+  end
+  else
+    S.Quitting := True;
 end;
 
 procedure RegisterCoreCommands(C: TCommands);
@@ -95,6 +110,7 @@ begin
   RegisterFileCommands(C);
   RegisterDataCommands(C);
   RegisterPrintCommands(C);
+  RegisterDefaultCommands(C);
 end;
 
 end.

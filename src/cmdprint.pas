@@ -56,7 +56,9 @@ function PrinterCommand: string;
 begin
   Result := PrintCommandOverride;
   if Result = '' then Result := GetEnvironmentVariable('MKSPREAD_PRINT_COMMAND');
-  if Result = '' then Result := 'lp';
+  if Result = '' then
+    if PrintDefaults.Name <> '' then Result := 'lp -d ''' + StringReplace(PrintDefaults.Name, '''', '', [rfReplaceAll]) + ''''
+    else Result := 'lp';
 end;
 
 procedure FlushPrint(S: TSession);

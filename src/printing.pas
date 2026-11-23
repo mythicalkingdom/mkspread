@@ -28,6 +28,17 @@ type
     Today: string;                    { replaces the date in headers (for tests) }
   end;
 
+type
+  { /Worksheet Global Default Printer }
+  TPrintDefaults = record
+    Left, Right, Top, Bottom, PgLength: Integer;
+    Setup: string;
+    Name: string;                   { the CUPS queue (lp -d); empty = the system default }
+  end;
+
+var
+  PrintDefaults: TPrintDefaults = (Left: 4; Right: 76; Top: 2; Bottom: 2; PgLength: 66; Setup: ''; Name: '');
+
 procedure ResetPrint(var ps: TPrintSettings);          { Clear All }
 procedure ResetPrintFormat(var ps: TPrintSettings);    { Clear Format }
 
@@ -54,12 +65,12 @@ uses SysUtils, Classes, cellfmt, formula;
 
 procedure ResetPrintFormat(var ps: TPrintSettings);
 begin
-  ps.Left := 4;
-  ps.Right := 76;
-  ps.Top := 2;
-  ps.Bottom := 2;
-  ps.PgLength := 66;
-  ps.Setup := '';
+  ps.Left := PrintDefaults.Left;
+  ps.Right := PrintDefaults.Right;
+  ps.Top := PrintDefaults.Top;
+  ps.Bottom := PrintDefaults.Bottom;
+  ps.PgLength := PrintDefaults.PgLength;
+  ps.Setup := PrintDefaults.Setup;
   ps.SetupSent := False;
 end;
 

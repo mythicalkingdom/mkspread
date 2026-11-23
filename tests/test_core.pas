@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata, refedit, printing, cmdprint, config, recovery, version;
+uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata, refedit, printing, cmdprint, config, recovery, version, defaults;
 
 var
   Fails, Total: Integer;
@@ -3220,6 +3220,131 @@ begin
   Check(Pos('1-2-3', VersionText) + Pos('Lotus', VersionText) = 0, 'no trademarked names in the version text');
 end;
 
+procedure TestDefaults;
+var
+  S: TSession;
+  Cmds: TCommands;
+  Ctl: TController;
+  q: TKeyQueue;
+  cfg, cfg2: TConfig;
+  c: TCell;
+  sh: TSheet;
+  txt: string;
+
+  procedure Go(const keys: string);
+  begin
+    q.PushString(keys);
+    while not q.Empty do Ctl.HandleKey(q.Pop);
+  end;
+
+begin
+  { international formats }
+  sh := TSheet.Create;
+  c := sh.Put(1, 1, '1234.5');
+  c.Fmt := MakeFormat(fkComma, 2);
+  DefaultConfig(cfg);
+  cfg.Punctuation := 1;                                  { B: decimal comma, thousands point }
+  ApplyConfig(cfg);
+  CheckStr(ValueText(c, sh, 12), '1.234,50 ', 'punctuation B in the Comma format');
+  c.Fmt := MakeFormat(fkFixed, 1);
+  CheckStr(ValueText(c, sh, 12), '1234,5', 'and in Fixed');
+  cfg.Punctuation := 2;                                  { C: thousands space }
+  ApplyConfig(cfg);
+  c.Fmt := MakeFormat(fkComma, 0);
+  CheckStr(ValueText(c, sh, 12), '1 235 ', 'punctuation C');
+  DefaultConfig(cfg);
+  cfg.CurrencySym := 'EUR';
+  cfg.CurrencyAfter := True;
+  cfg.NegParen := False;
+  ApplyConfig(cfg);
+  c.Fmt := MakeFormat(fkCurrency, 2);
+  CheckStr(ValueText(c, sh, 14), '1,234.50EUR ', 'a currency suffix');
+  c.SetRaw('-5');
+  CheckStr(ValueText(c, sh, 14), '-5.00EUR ', 'a negative with a sign');
+  DefaultConfig(cfg);
+  cfg.DateStyle := 1;
+  cfg.TimeStyle := 3;
+  ApplyConfig(cfg);
+  c.SetRaw('33000');
+  c.Fmt := MakeFormat(fkDate, 4);
+  CheckStr(ValueText(c, sh, 12), '07/05/90', 'international date B');
+  c.SetRaw('0.5');
+  c.Fmt := MakeFormat(fkDate, 8);
+  CheckStr(ValueText(c, sh, 12), '12h00m00s', 'international time D');
+  DefaultConfig(cfg);
+  ApplyConfig(cfg);
+  c.SetRaw('1234.5');
+  c.Fmt := MakeFormat(fkCurrency, 2);
+  CheckStr(ValueText(c, sh, 14), '$1,234.50 ', 'back to the defaults');
+  sh.Free;
+
+  { the configuration file text }
+  DefaultConfig(cfg);
+  cfg.PrintLeft := 9; cfg.PrintSetup := '\015'; cfg.Punctuation := 5; cfg.CurrencySym := 'kr';
+  cfg.CurrencyAfter := True; cfg.NegParen := False; cfg.DateStyle := 2; cfg.Clock := 1; cfg.UndoOn := False;
+  cfg.Directory := '/tmp'; cfg.PrintName := 'office';
+  DefaultConfig(cfg2);
+  CheckStr(ParseConfig(FormatConfig(cfg), cfg2), '', 'the written configuration reads back without problems');
+  CheckInt(cfg2.PrintLeft, 9, 'left margin');
+  CheckStr(cfg2.PrintSetup, '\015', 'setup');
+  CheckInt(cfg2.Punctuation, 5, 'punctuation');
+  CheckStr(cfg2.CurrencySym, 'kr', 'currency');
+  Check(cfg2.CurrencyAfter and not cfg2.NegParen and not cfg2.UndoOn, 'flags');
+  CheckInt(cfg2.DateStyle, 2, 'date style');
+  CheckInt(cfg2.Clock, 1, 'clock');
+  CheckStr(cfg2.Directory, '/tmp', 'directory');
+  CheckStr(cfg2.PrintName, 'office', 'printer name');
+  Check(ParseConfig('punctuation = Z'#10, cfg2) <> '', 'a bad punctuation letter is reported');
+
+  { the menu }
+  S := TSession.Create;
+  Cmds := TCommands.Create;
+  RegisterCoreCommands(Cmds);
+  Ctl := TController.Create(S, Cmds);
+  q := TKeyQueue.Create;
+  Go('/wgdpl');
+  Check(S.Mode = mPrompt, 'Printer Left asks for a margin');
+  Go('8'#13);
+  CheckInt(S.Cfg.PrintLeft, 8, 'the default left margin');
+  Check(S.Mode = mMenu, 'the Printer menu stays open');
+  Go('q');
+  Check(S.Mode = mMenu, 'Quit goes up to the Default menu');
+  Go('q');
+  Check(S.Mode = mReady, 'Quit leaves the Default menu');
+  ApplyConfig(S.Cfg);
+  Go('/ppcf');
+  Go('q');
+  CheckInt(S.Print.Left, 8, 'Clear Format restores the new default');
+  Go('/wgds');
+  Check((S.Mode = mHelp) and (S.HelpId = 'status'), 'Status shows the settings');
+  Ctl.HandleKey(kEsc);
+  Check(S.Mode = mMenu, 'and Esc returns to the Default menu');
+  Ctl.HandleKey(kBreak);
+  { the clock and undo options }
+  Go('/wgdocn');
+  CheckInt(S.Cfg.Clock, 2, 'Clock None');
+  Go('q');
+  Go('oud');
+  Check(not S.Cfg.UndoOn, 'Undo Disable');
+  Go('q');
+  Go('q');
+  Check(S.Mode = mReady, 'both menus left');
+  Go('5'#13);
+  Check(not S.HasUndo, 'no undo information is kept');
+  Ctl.HandleKey(kBreak);
+  { quitting with unsaved changes asks again }
+  S.Cfg.UndoOn := True;
+  Go('/qy');
+  Check(not S.Quitting and (S.Mode = mNames), 'Quit Yes with changes asks again');
+  Go('n');
+  Check(not S.Quitting, 'No: stay');
+  Go('/qy');
+  Go('y');
+  Check(S.Quitting, 'Yes: leave');
+  DefaultConfig(cfg);
+  ApplyConfig(cfg);
+end;
+
 procedure TestRefEdit;
 var
   s: string;
@@ -3349,6 +3474,7 @@ begin
   TestWindows;
   TestPrintFile;
   TestRecovery;
+  TestDefaults;
   WriteLn(Total - Fails, '/', Total, ' checks passed');
   if Fails > 0 then Halt(1);
 end.

@@ -235,7 +235,41 @@ begin
   Result := s + Copy(Result, Pos('E', Result), MaxInt);
 end;
 
+{ swaps the decimal point and the thousands comma for the chosen punctuation }
+function Localize(const s: string): string;
+var
+  i: Integer;
+begin
+  Result := s;
+  if (Intl.Decimal = '.') and (Intl.Thousands = ',') then exit;
+  for i := 1 to Length(Result) do
+    if Result[i] = '.' then Result[i] := Intl.Decimal
+    else if Result[i] = ',' then Result[i] := Intl.Thousands;
+end;
+
+function Money(const digits: string; neg: Boolean; withSymbol: Boolean): string;
+var
+  body: string;
+begin
+  body := digits;
+  if withSymbol then
+    if Intl.CurrencyAfter then body := body + Intl.CurrencySym else body := Intl.CurrencySym + body;
+  if neg then
+    if Intl.NegParen then Result := '(' + body + ')' else Result := '-' + body + ' '
+  else
+    Result := body + ' ';             { room for the ) that negatives have (observed) }
+end;
+
+function FormatNumberRaw(d: Double; const f: TCellFormat; width: Integer): string; forward;
+
 function FormatNumber(d: Double; const f: TCellFormat; width: Integer): string;
+begin
+  Result := FormatNumberRaw(d, f, width);
+  if f.Kind in [fkGeneral, fkFixed, fkSci, fkPercent] then Result := Localize(Result)
+  else if f.Kind in [fkCurrency, fkComma] then Result := Localize(Result);
+end;
+
+function FormatNumberRaw(d: Double; const f: TCellFormat; width: Integer): string;
 var
   n: Integer;
 begin
@@ -247,18 +281,8 @@ begin
         if d < 0 then Result := '-' + Result;
       end;
     fkSci: Result := SciText(d, f.Dec);
-    fkCurrency:
-      begin
-        Result := '$' + FixedAbs(d, f.Dec, True);
-        if d < 0 then Result := '(' + Result + ')'
-        else Result := Result + ' ';          { room for the ) that negatives have (observed) }
-      end;
-    fkComma:
-      begin
-        Result := FixedAbs(d, f.Dec, True);
-        if d < 0 then Result := '(' + Result + ')'
-        else Result := Result + ' ';
-      end;
+    fkCurrency: Result := Money(FixedAbs(d, f.Dec, True), d < 0, True);
+    fkComma: Result := Money(FixedAbs(d, f.Dec, True), d < 0, False);
     fkPercent:
       begin
         Result := FixedAbs(d * 100, f.Dec, False) + '%';

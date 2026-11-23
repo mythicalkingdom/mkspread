@@ -69,7 +69,7 @@ type
 
 implementation
 
-uses keys, cellfmt, formula, menutree, u8edit, cmdfile, cmddata, cmdprint, helpdata, refedit, Classes, Math, SysUtils;
+uses keys, cellfmt, formula, menutree, u8edit, cmdfile, cmddata, cmdprint, cmddefault, helpdata, refedit, Classes, Math, SysUtils;
 
 { Alt-F3 picked a range name: start it as a macro }
 procedure RunNameChosen(S: TSession; const path: string);
@@ -891,11 +891,13 @@ begin
   FS.MenuIdx[d] := i;
   kid := FS.MenuNodes[d][i];
   path := FS.MenuPath(d);
-  if (not kid.IsLeaf) and ((path = 'Print Printer') or (path = 'Print File')) then
+  if (not kid.IsLeaf) and ((path = 'Print Printer') or (path = 'Print File') or
+     (path = 'Worksheet Global Default Other International Currency')) then
   begin
     { choosing the destination runs a command (file name prompt), then the menu opens }
     FS.Mode := mReady;
-    FS.ReturnPath := PrintReturnPath(path);
+    if Pos('Print', path) = 1 then FS.ReturnPath := PrintReturnPath(path)
+    else FS.ReturnPath := DefaultReturnPath(path);
     FCmds.Run(path, FS);
     exit;
   end;
@@ -908,7 +910,8 @@ begin
   end;
   FS.Mode := mReady;
   FS.ReturnPath := '';
-  if Pos('Print ', path) = 1 then FS.ReturnPath := PrintReturnPath(path);
+  if Pos('Print ', path) = 1 then FS.ReturnPath := PrintReturnPath(path)
+  else if Pos('Worksheet Global Default ', path) = 1 then FS.ReturnPath := DefaultReturnPath(path);
   if (Pos('Data Sort ', path) = 1) or (Pos('Data Query ', path) = 1) or
      (Pos('Data Regression ', path) = 1) or (Pos('Data Parse ', path) = 1) then
     if not path.EndsWith(' Quit') and (path <> 'Data Sort Go') and (path <> 'Data Regression Go') and (path <> 'Data Parse Go') then

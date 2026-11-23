@@ -21,7 +21,7 @@ unit session;
 
 interface
 
-uses Classes, sheet, menutree, calc, printing;
+uses Classes, sheet, menutree, calc, printing, config;
 
 type
   TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint, mNames, mFind, mHelp);
@@ -127,6 +127,7 @@ type
     WinSync: Boolean;                   { windows scroll together }
     WinOther: TWinState;
     ScreenW, ScreenH: Integer;
+    Cfg: TConfig;                       { the settings (and /Worksheet Global Default) }
     Modified: Boolean;                  { the worksheet has changes that are not in a file }
     Changes: Cardinal;                  { counts changes (for the recovery file) }
     SeenVersion: Cardinal;
@@ -203,6 +204,7 @@ begin
   ChoiceHelp := TStringList.Create;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
   ResetPrint(Print);
+  DefaultConfig(Cfg);
   ScreenW := 80;
   ScreenH := 25;
   Print.Pos := 0;
@@ -622,6 +624,13 @@ procedure TSession.SaveUndo;
 begin
   Modified := True;
   Inc(Changes);
+  if not Cfg.UndoOn then
+  begin
+    UndoSet.Free;
+    UndoSet := nil;
+    HasUndo := False;
+    exit;
+  end;
   UndoSet.Free;                  { single level: the previous change is forgotten }
   UndoSet := Sheet.BeginChange;
   HasUndo := True;

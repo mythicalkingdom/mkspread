@@ -26,6 +26,22 @@ interface
 const
   MaxSerial = 73050;               { 31-Dec-2099 }
 
+type
+  { /Worksheet Global Default Other International }
+  TIntl = record
+    Decimal, Thousands: Char;       { punctuation in displayed numbers }
+    CurrencySym: string;
+    CurrencyAfter: Boolean;         { the symbol follows the number }
+    NegParen: Boolean;              { negatives in parentheses (False: a minus sign) }
+    DateStyle: Integer;             { 0 MM/DD/YY, 1 DD/MM/YY, 2 DD.MM.YY, 3 YY-MM-DD }
+    TimeStyle: Integer;             { 0 HH:MM:SS, 1 HH.MM.SS, 2 HH,MM,SS, 3 HHhMMmSSs }
+  end;
+
+var
+  Intl: TIntl;
+
+procedure ResetIntl;
+
 function SerialToDate(serial: Integer; out y, m, d: Integer): Boolean;
 function DateToSerial(y, m, d: Integer): Integer;       { 0 when invalid }
 
@@ -81,6 +97,17 @@ begin
   if y >= 2000 then Result := IntToStr(y) else Result := Two(y mod 100);
 end;
 
+procedure ResetIntl;
+begin
+  Intl.Decimal := '.';
+  Intl.Thousands := ',';
+  Intl.CurrencySym := '$';
+  Intl.CurrencyAfter := False;
+  Intl.NegParen := True;
+  Intl.DateStyle := 0;
+  Intl.TimeStyle := 0;
+end;
+
 function FormatSerial(value: Double; kind: Integer): string;
 var
   y, m, d, secs, h, mi, se, h12: Integer;
@@ -93,8 +120,18 @@ begin
       1: Result := Two(d) + '-' + MonthNames[m] + '-' + YearText(y);
       2: Result := Two(d) + '-' + MonthNames[m];
       3: Result := MonthNames[m] + '-' + YearText(y);
-      4: Result := Two(m) + '/' + Two(d) + '/' + YearText(y);
-      5: Result := Two(m) + '/' + Two(d);
+      4: case Intl.DateStyle of
+           1: Result := Two(d) + '/' + Two(m) + '/' + YearText(y);
+           2: Result := Two(d) + '.' + Two(m) + '.' + YearText(y);
+           3: Result := YearText(y) + '-' + Two(m) + '-' + Two(d);
+         else Result := Two(m) + '/' + Two(d) + '/' + YearText(y);
+         end;
+      5: case Intl.DateStyle of
+           1: Result := Two(d) + '/' + Two(m);
+           2: Result := Two(d) + '.' + Two(m);
+           3: Result := Two(m) + '-' + Two(d);
+         else Result := Two(m) + '/' + Two(d);
+         end;
     end;
   end
   else
@@ -109,10 +146,22 @@ begin
     case kind of
       6: Result := Two(h12) + ':' + Two(mi) + ':' + Two(se) + ' ' + ampm;
       7: Result := Two(h12) + ':' + Two(mi) + ' ' + ampm;
-      8: Result := Two(h) + ':' + Two(mi) + ':' + Two(se);
-      9: Result := Two(h) + ':' + Two(mi);
+      8: case Intl.TimeStyle of
+           1: Result := Two(h) + '.' + Two(mi) + '.' + Two(se);
+           2: Result := Two(h) + ',' + Two(mi) + ',' + Two(se);
+           3: Result := Two(h) + 'h' + Two(mi) + 'm' + Two(se) + 's';
+         else Result := Two(h) + ':' + Two(mi) + ':' + Two(se);
+         end;
+      9: case Intl.TimeStyle of
+           1: Result := Two(h) + '.' + Two(mi);
+           2: Result := Two(h) + ',' + Two(mi);
+           3: Result := Two(h) + 'h' + Two(mi) + 'm';
+         else Result := Two(h) + ':' + Two(mi);
+         end;
     end;
   end;
 end;
 
+initialization
+  ResetIntl;
 end.

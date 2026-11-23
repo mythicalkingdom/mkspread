@@ -17,6 +17,9 @@ function HelpRelated(i: Integer): string;              { ids separated by commas
 { the topic for a menu position such as "Range Format Fixed" }
 function HelpForMenu(const path: string): string;
 
+{ replaces the text of a topic that is made while the program runs (the Status screen) }
+procedure HelpSetTopic(const id, title, body: string);
+
 implementation
 
 uses SysUtils;
@@ -59,6 +62,22 @@ function HelpId(i: Integer): string; begin Result := Topics[i].Id; end;
 function HelpTitle(i: Integer): string; begin Result := Topics[i].Title; end;
 function HelpBody(i: Integer): string; begin Result := Topics[i].Body; end;
 function HelpRelated(i: Integer): string; begin Result := Topics[i].Related; end;
+
+procedure HelpSetTopic(const id, title, body: string);
+var
+  i: Integer;
+begin
+  i := HelpIndexOf(id);
+  if i < 0 then
+  begin
+    i := Length(Topics);
+    SetLength(Topics, i + 1);
+    Topics[i].Id := id;
+    Topics[i].Related := '';
+  end;
+  Topics[i].Title := title;
+  Topics[i].Body := body;
+end;
 
 function HelpForMenu(const path: string): string;
 var
@@ -310,10 +329,25 @@ begin
     'Recalculation   Natural, Columnwise or Rowwise order; Automatic or Manual;|' +
     '                Iteration sets how many passes a circular reference gets|' +
     'Protection      Enable or Disable (kept for compatibility)|' +
-    'Default         settings kept for the program: Directory, Status, Update|' +
+    'Default         printer, directory, international formats, clock, undo|' +
     'Zero            choose whether zero values are shown or left blank',
     'm:range format,recalc');
 
+  T('m:worksheet global default', 'Worksheet Global Default',
+    'Settings that last: Update saves them in ~/.config/mkspread/mkspread.conf.|' +
+    'Printer     Interface, Auto-LF, Left, Right, Top, Bottom, Pg-Length, Wait,|' +
+    '            Setup (the starting values of /Print) and Name (the print queue,|' +
+    '            used as lp -d)|' +
+    'Directory   the folder files are read from and saved in|' +
+    'Status      show all the settings         Update  save them|' +
+    'Other       International: Punctuation A-H (decimal, thousands, argument|' +
+    '            separators), Currency symbol and Prefix/Suffix, Date A-D and Time|' +
+    '            A-D (the D4/D5 and D8/D9 formats), Negative Parentheses or Sign|' +
+    '            Clock: Standard, International or None     Undo: Enable/Disable|' +
+    '            Help and Beep are kept for compatibility',
+    'm:worksheet global,m:print')
+
+  ;
   T('m:range', 'Range commands',
     'Format   how numbers look in the range          Label    align labels|' +
     'Erase    clear the range                        Name     give names to ranges|' +

@@ -25,6 +25,13 @@ def clean_state():
     shutil.rmtree(os.path.join(STATE, 'mkspread'), ignore_errors=True)
 
 
+def quit(s):
+    """/Quit Yes, and Yes again when there are unsaved changes."""
+    s.send('/qy', 0.4)
+    if s.alive and s.line(2).startswith('No  Yes'):
+        s.send('y', 0.4)
+
+
 def run(args=(), rows=25, cols=80, cwd=None):
     clean_state()
     return Session([BIN] + list(args), rows, cols, cwd=cwd)
@@ -118,7 +125,7 @@ check(s.line(1).startswith("A1: 'café"), 'status shows raw contents', s.line(1)
 s.send('\x1b[B')
 s.send('42\r')
 check(s.line(6).rstrip().endswith('42') and len(s.line(6).rstrip()) == 4 + 8, 'number right aligned in cell', repr(s.line(6)))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 
@@ -156,7 +163,7 @@ check(s.line(1).startswith('A1: [W12]'), 'status shows [W12]', s.line(1))
 # date format
 s.send('/rfd1\r')
 check(s.line(5).rstrip().endswith('23-Sep-33') or '-' in s.line(5), 'date format applied', s.line(5))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 # ---- phase 4: formulas on screen ----
@@ -178,7 +185,7 @@ check('CALC' not in s.line(25) and s.line(6).rstrip().endswith('18'), 'F9 recalc
 s.send('\x1b[B\x1b[B+b3\r\x1b[C+a3\r')
 s.send('\x1b[20~')   # manual mode: F9 to find the cycle
 check('CIRC' in s.line(25), 'CIRC indicator', s.line(25))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 # ---- phase 5: copy, titles, names on screen ----
@@ -201,7 +208,7 @@ s.send('\x1b[6~')            # PgDn
 check(s.line(5).startswith('1   H') or s.line(5).startswith("1   H"), 'title row stays on top', s.line(5))
 check(s.line(6).startswith('21'), 'scrolling rows start below the titles', s.line(6))
 check(s.line(1).startswith('A21:'), 'pointer moved a screen', s.line(1))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 s = run()
@@ -218,7 +225,7 @@ s.send('/c\x1bOR')          # F3 inside a range prompt
 check(s.line(1).endswith('NAMES') and s.line(2).startswith('TAX'), 'F3 lists names', s.line(1) + s.line(2))
 s.send('\x1b')
 s.send('\x1b')
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 # ---- phase 6: files ----
@@ -239,7 +246,7 @@ try:
     s.send('/fs\r')
     check(s.line(1).endswith('NAMES') and s.line(2).startswith('Cancel  Replace'), 'asks before replacing', s.line(1) + s.line(2))
     s.send('\x1b')
-    s.send('/qy', 0.4)
+    quit(s)
     s.close()
 
     s = run(['sheet.WK1'], cwd=d)
@@ -259,7 +266,7 @@ try:
     s.send('/fr')
     s.send('nothing\r')
     check('File not found: nothing' in s.line(25), 'missing file', s.line(25))
-    s.send('/qy', 0.4)
+    quit(s)
     s.close()
 
     with open(os.path.join(d, 'bad.wk1'), 'w') as fh:
@@ -283,7 +290,7 @@ check('CMD' in s.line(25), 'CMD indicator while a macro waits', s.line(25))
 s.send('ab\r')
 check('abthere' in s.line(7) + s.line(8), 'macro continued after the user pressed Enter (Enter not stored)', s.line(7) + s.line(8))
 check('CMD' not in s.line(25), 'CMD indicator gone when the macro ends', s.line(25))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 # ---- learn and step indicators ----
@@ -299,7 +306,7 @@ s.send('\x1b[1;3Q')               # Alt-F2
 check('STEP' in s.line(25), 'STEP indicator', s.line(25))
 s.send('\x1b[1;3Q')
 check('STEP' not in s.line(25), 'STEP indicator off', s.line(25))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 # ---- phase 9: /Data commands on screen ----
@@ -332,7 +339,7 @@ s.send('\x1b')
 check(s.line(1).endswith('MENU'), 'Esc in FIND returns to the Query menu', s.line(1))
 s.send('\x1b\x1b\x1b')
 check(s.line(1).endswith('READY'), 'Esc leaves the menu', s.line(1))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 # ---- the Sort menu comes back after each setting; Go ends it ----
@@ -350,7 +357,7 @@ s.send('d')                      # replaces the default A
 s.send('\r')
 check(s.line(1).endswith('MENU'), 'the Sort menu returns after a key', s.line(1))
 s.send('\x1b\x1b')
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 # ---- F4 and pointing in formulas ----
@@ -373,7 +380,22 @@ check(s.line(2).startswith('+$A$1'), 'F4 while pointing', s.line(2))
 s.send('*2\r')
 check(s.line(1).startswith('A2:') and s.line(1).endswith('READY'), 'the pointer is back after the entry', s.line(1))
 check(s.line(6).rstrip().endswith('10'), 'the formula was entered (+$A$1*2 = 10)', s.line(6))
-s.send('/qy', 0.4)
+quit(s)
+s.close()
+
+# ---- defaults and the quit confirmation ----
+s = run()
+s.send('/wgds', 0.5)
+check(s.line(1).endswith('HELP') and 'Printer' in s.line(3) and 'Page length 66' in s.line(6), 'Default Status shows the settings', s.line(3) + s.line(6))
+s.send('\x1b', 0.3)
+check(s.line(1).endswith('MENU'), 'Esc returns to the Default menu', s.line(1))
+s.send('\x1b\x1b\x1b\x1b', 0.3)
+s.send('5\r/qy', 0.5)
+check(s.line(2).startswith('No  Yes') and 'unsaved changes' in s.line(25), 'Quit asks again when the worksheet changed', s.line(2) + s.line(25))
+s.send('n', 0.3)
+check(s.alive and s.line(1).endswith('READY'), 'No stays', s.line(1))
+quit(s)
+check(not s.alive, 'Yes quits')
 s.close()
 
 # ---- recovery ----
@@ -392,7 +414,7 @@ check('Load the unsaved worksheet' in s.line(3), 'with an explanation', s.line(3
 s.send('\r')
 check(s.line(5).rstrip().endswith('5') and 'abc' in s.line(6), 'the worksheet is recovered', s.line(5) + s.line(6))
 check(not glob.glob(rec + '/*.wk1'), 'the recovery file is gone', str(glob.glob(rec + '/*')))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 check(not glob.glob(rec + '/*'), 'a clean exit leaves nothing', str(glob.glob(rec + '/*')))
 # discard, and the periodic write
@@ -407,7 +429,7 @@ s = Session([BIN], 25, 80)
 check(s.line(2).startswith('Recover'), 'offered after a crash', s.line(2))
 s.send('d')
 check(s.line(5).strip() == '1' and not glob.glob(rec + '/*.wk1'), 'Discard deletes it', s.line(5))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 os.remove(os.path.join(STATE, 'config', 'mkspread', 'mkspread.conf'))
 
@@ -420,7 +442,7 @@ s.send('\x1b[17~', 0.3)
 check(s.line(1).startswith('A9:'), 'F6 moves to the upper window', s.line(1))
 s.send('/wwc', 0.3)
 check(s.line(1).startswith('A9:'), 'Clear keeps the pointer', s.line(1))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 # ---- print menu ----
@@ -431,7 +453,7 @@ s.send('g', 0.3)
 check('Specify a print range first' in s.line(25) and s.line(1).endswith('MENU'), 'Go without a range says so and the menu stays', s.line(25) + s.line(1))
 s.send('q', 0.3)
 check(s.line(1).endswith('READY'), 'Quit leaves the menu', s.line(1))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 # ---- help screens ----
@@ -467,19 +489,19 @@ s.send('x')
 check(s.line(3).startswith('K1: {DOWN}>hi~'), 'the marker moves one key per step', s.line(3))
 s.send('\x1b[1;3Q')                      # Alt-F2: run on
 check('STEP' not in s.line(25), 'STEP off', s.line(25))
-s.send('/qy', 0.4)
+quit(s)
 s.close()
 
 # ---- screen size handling ----
 s = run(rows=20, cols=70)
 check('too small' in s.line(1), 'small terminal message', s.line(1))
-s.send('/qy', 0.3)
+quit(s)
 s.close()
 s = run(['--expand'], rows=30, cols=100)
 check(s.line(4).split()[-1] == 'L' or len(s.line(4).split()) >= 10, 'expand shows more columns', s.line(4))
 check(s.line(30)[:3].strip() != '' , 'expand uses bottom of tall terminal', s.line(30))
 check(s.line(29).startswith('25'), 'expand shows 25 rows', s.line(29))
-s.send('/qy', 0.3)
+quit(s)
 s.close()
 
 # ---- key test mode ----
