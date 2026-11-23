@@ -366,6 +366,17 @@ check(s.line(6).rstrip().endswith('10'), 'the formula was entered (+$A$1*2 = 10)
 s.send('/qy', 0.4)
 s.close()
 
+# ---- print menu ----
+s = run()
+s.send('/pp', 0.3)
+check(s.line(2).startswith('Range  Line  Page  Options  Clear  Align  Go  Quit'), 'the print menu opens after Printer', s.line(2))
+s.send('g', 0.3)
+check('Specify a print range first' in s.line(25) and s.line(1).endswith('MENU'), 'Go without a range says so and the menu stays', s.line(25) + s.line(1))
+s.send('q', 0.3)
+check(s.line(1).endswith('READY'), 'Quit leaves the menu', s.line(1))
+s.send('/qy', 0.4)
+s.close()
+
 # ---- help screens ----
 s = run()
 s.send('\x1bOP', 0.3)
