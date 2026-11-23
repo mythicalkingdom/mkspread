@@ -25,6 +25,9 @@ type
 
 procedure TermInit;
 procedure TermDone;
+{ leave curses for a while (a shell, a command) and come back }
+procedure TermSuspend;
+procedure TermResume;
 function TermWidth: Integer;
 function TermHeight: Integer;
 procedure TermClear;
@@ -78,6 +81,20 @@ procedure TermDone;
 begin
   curs_set(1);
   endwin;
+end;
+
+procedure TermSuspend;
+begin
+  def_prog_mode;
+  curs_set(1);
+  endwin;
+end;
+
+procedure TermResume;
+begin
+  reset_prog_mode;
+  clearok(stdscr, True);
+  wrefresh(stdscr);
 end;
 
 function TermWidth: Integer;

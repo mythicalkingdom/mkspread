@@ -76,6 +76,12 @@ begin
     S.Msg := '[stub] /' + path;
 end;
 
+procedure CmdSystem(S: TSession; const path: string);
+begin
+  S.SystemCmd := '';
+  S.SystemPending := True;
+end;
+
 procedure CmdQuitNo(S: TSession; const path: string);
 begin
   { nothing: just return to READY }
@@ -103,6 +109,7 @@ end;
 
 procedure RegisterCoreCommands(C: TCommands);
 begin
+  C.Register('System', @CmdSystem);
   C.Register('Quit No', @CmdQuitNo);
   C.Register('Quit Yes', @CmdQuitYes);
   RegisterSheetCommands(C);

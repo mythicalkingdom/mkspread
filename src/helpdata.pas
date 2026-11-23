@@ -552,8 +552,10 @@ begin
 
   ;
   T('m:system', 'System',
-    'System would leave the program for the operating system and return.|' +
-    'It is not available yet; use your terminal for now.',
+    'System leaves the worksheet for a shell (your SHELL, or /bin/sh) and|' +
+    'comes back when you type exit.  The worksheet stays as it was; a recovery|' +
+    'copy is written first in case the shell is not left cleanly.|' +
+    'In a macro, {SYSTEM command} runs one command and returns.',
     'm:quit')
 
   ;

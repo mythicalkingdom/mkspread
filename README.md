@@ -8,8 +8,7 @@ Status: **0.10**.  Working: formulas and the `@function` library, editing
 commands, range names, titles, windows, worksheet files (`.WK1`, `.WKS`, text
 import), macros with recording and step mode, the `/Data` commands, `/Print`
 (to a file or through `lp`), context help (F1), F4 and pointing in formulas,
-recovery file and autosave (`docs/config.md`).  Not yet: `.XLS`, `/System`,
-`/Worksheet Global Default` files, graphs (by design).  Behaviour not yet verified
+recovery file and autosave (`docs/config.md`).  Not yet: `.XLS`, graphs (by design).  Behaviour not yet verified
 against the original is listed in `docs/compat-notes.md`; sources are in
 `docs/SOURCES.md`.
 

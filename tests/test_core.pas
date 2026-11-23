@@ -1919,6 +1919,12 @@ begin
     CheckStr(RawAt(MS, 4, 2), '11', '{FILESIZE}: hello, CRLF, ab12');
     CheckStr(RawAt(MS, 5, 2), '11', '{GETPOS}');
     CheckStr(RawAt(MS, 6, 2), '''ell', '{SETPOS} then {READ}');
+    NewMacroSession;
+    Mac(1, '{SYSTEM "echo hi"}{LET B1,1}');
+    NameMac('\A', 1);
+    RunMac('\A');
+    Check(MS.SystemPending and (MS.SystemCmd = 'echo hi'), '{SYSTEM} asks the main loop to run a command');
+    CheckStr(RawAt(MS, 1, 2), '1', 'and the macro goes on');
     { a failed command skips the rest of its cell }
     NewMacroSession;
     Mac(1, '{OPEN "nothere.txt",R}{LET B1,1}');

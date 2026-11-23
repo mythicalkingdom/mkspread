@@ -41,6 +41,7 @@ tilde.  `{?}` pauses until the user presses Enter; that Enter only resumes the m
 | `{CLOSE}` | close the file |
 | `{READ n,loc}` `{READLN loc}` | read n bytes / a line into a label |
 | `{WRITE text}` `{WRITELN text}` | write text (WRITELN adds a line end, CR LF) |
+| `{SYSTEM command}` | run a shell command, then return (`/System` itself opens a shell) |
 | `{FILESIZE loc}` `{GETPOS loc}` `{SETPOS n}` | size of the file, the position (from 0), set the position |
 
 A file command that fails (file not found, end of file, no file open, wrong mode) skips
@@ -62,5 +63,5 @@ Text is written and read in the original character set.
   at the position; any key steps (the key itself is not typed).  Alt-F2 during a
   step switches STEP off and the macro runs on.
 
-Not implemented: `{SYSTEM}`, `{DISPATCH}`.  An unknown command ends the macro with a message.
+Not implemented: `{DISPATCH}`.  An unknown command ends the macro with a message.
 A macro that branches in a loop without typing anything is stopped.

@@ -44,6 +44,9 @@ var
 function setlocale(category: cint; locale: PChar): PChar; cdecl; external 'c';
 function initscr: Pointer; cdecl; external 'ncursesw';
 function endwin: cint; cdecl; external 'ncursesw';
+function def_prog_mode: cint; cdecl; external 'ncursesw';
+function reset_prog_mode: cint; cdecl; external 'ncursesw';
+function clearok(w: Pointer; f: ByteBool): cint; cdecl; external 'ncursesw';
 function raw: cint; cdecl; external 'ncursesw';
 function noecho: cint; cdecl; external 'ncursesw';
 function nonl: cint; cdecl; external 'ncursesw';

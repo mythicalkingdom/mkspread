@@ -824,6 +824,12 @@ begin
         FPos := Length(FLine) + 1;
       exit(False);
     end;
+    if nm = 'SYSTEM' then
+    begin
+      FS.SystemCmd := FileText(rest);
+      FS.SystemPending := True;
+      exit(False);
+    end;
     if nm = 'LOOK' then
     begin
       if (args.Count > 0) and Loc(args[0], r, c) then StoreLabel(r, c, '');

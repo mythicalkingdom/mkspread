@@ -17,7 +17,7 @@
 program mkspread;
 {$mode objfpc}{$H+}
 
-uses SysUtils, DateUtils, StrUtils, keys, terminal, session, commands, controller, view, demo, keytest,
+uses SysUtils, DateUtils, StrUtils, BaseUnix, keys, terminal, session, commands, controller, view, demo, keytest,
      cmdfile, macro, version, config, recovery, defaults;
 
 procedure Usage;
@@ -75,6 +75,42 @@ begin
       end;
     1: DeleteStale(Stale);
   end;
+end;
+
+{ /System and {SYSTEM}: the screen is given back to the terminal while a shell or a command runs }
+procedure RunSystem;
+var
+  sh: string;
+  oldInt: SigActionRec;
+  ign: SigActionRec;
+begin
+  S.SystemPending := False;
+  S.CheckModified;
+  if S.Modified and not noRecovery and (cfg.RecoverySeconds > 0) then WriteRecovery(S);   { just in case }
+  TermSuspend;
+  FillChar(ign, SizeOf(ign), 0);
+  ign.sa_handler := SigActionHandler(SIG_IGN);
+  FpSigAction(SIGINT, @ign, @oldInt);                  { Ctrl-C is for the program that runs }
+  try
+    try
+      if S.SystemCmd = '' then
+      begin
+        WriteLn;
+        WriteLn('mkspread: type exit to return to the worksheet.');
+        sh := GetEnvironmentVariable('SHELL');
+        if sh = '' then sh := '/bin/sh';
+        ExecuteProcess(sh, []);
+      end
+      else
+        ExecuteProcess('/bin/sh', ['-c', S.SystemCmd]);
+    except
+      on E: Exception do S.Msg := 'Cannot run the shell';
+    end;
+  finally
+    FpSigAction(SIGINT, @oldInt, nil);
+    TermResume;
+  end;
+  needDraw := True;
 end;
 
 { recovery file and autosave, once in a while }
@@ -230,6 +266,7 @@ begin
           end;
         end;
         if S.MacroRequest <> '' then M.TakeRequest;
+        if S.SystemPending then RunSystem;
       until S.Quitting;
     end;
   finally

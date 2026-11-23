@@ -127,6 +127,8 @@ type
     WinSync: Boolean;                   { windows scroll together }
     WinOther: TWinState;
     ScreenW, ScreenH: Integer;
+    SystemPending: Boolean;             { /System or {SYSTEM}: the main loop runs it }
+    SystemCmd: string;                  { '' = an interactive shell }
     Cfg: TConfig;                       { the settings (and /Worksheet Global Default) }
     Modified: Boolean;                  { the worksheet has changes that are not in a file }
     Changes: Cardinal;                  { counts changes (for the recovery file) }

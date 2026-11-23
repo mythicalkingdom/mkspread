@@ -383,6 +383,20 @@ check(s.line(6).rstrip().endswith('10'), 'the formula was entered (+$A$1*2 = 10)
 quit(s)
 s.close()
 
+# ---- /System ----
+os.environ['SHELL'] = '/bin/sh'
+marker = os.path.join(STATE, 'sys_marker')
+if os.path.exists(marker): os.remove(marker)
+s = run()
+s.send('5\r', 0.2)
+s.send('/s', 0.8)
+s.send('echo ran > ' + marker + '; exit\r', 0.8)
+check(s.line(1).endswith('READY') and s.line(5).rstrip().endswith('5'), 'back in the worksheet after the shell', s.line(1) + s.line(5))
+check(os.path.exists(marker), 'the shell ran')
+s.send('5\r', 0.2)
+quit(s)
+s.close()
+
 # ---- defaults and the quit confirmation ----
 s = run()
 s.send('/wgds', 0.5)
