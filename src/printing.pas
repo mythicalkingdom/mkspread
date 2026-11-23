@@ -31,6 +31,9 @@ type
 procedure ResetPrint(var ps: TPrintSettings);          { Clear All }
 procedure ResetPrintFormat(var ps: TPrintSettings);    { Clear Format }
 
+{ takes the settings a worksheet file keeps (not where the paper is or where output goes) }
+procedure CopyFilePrintSettings(var dst: TPrintSettings; const src: TPrintSettings);
+
 { the text for the print range as set (Go): pages of PgLength lines }
 function PrintRangeText(sh: TSheet; var ps: TPrintSettings; out err: string): string;
 
@@ -70,6 +73,26 @@ begin
   ps.CellFormulas := False;
   ps.Unformatted := False;
   ResetPrintFormat(ps);
+end;
+
+procedure CopyFilePrintSettings(var dst: TPrintSettings; const src: TPrintSettings);
+begin
+  dst.RangeSet := src.RangeSet;
+  dst.Range := src.Range;
+  dst.Left := src.Left;
+  dst.Right := src.Right;
+  dst.Top := src.Top;
+  dst.Bottom := src.Bottom;
+  dst.PgLength := src.PgLength;
+  dst.Header := src.Header;
+  dst.Footer := src.Footer;
+  dst.Setup := src.Setup;
+  dst.BorderCols := src.BorderCols;
+  dst.BorderRows := src.BorderRows;
+  dst.BorderColsSet := src.BorderColsSet;
+  dst.BorderRowsSet := src.BorderRowsSet;
+  dst.Unformatted := src.Unformatted;
+  dst.CellFormulas := src.CellFormulas;
 end;
 
 function SetupBytes(const s: string): string;

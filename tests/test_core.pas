@@ -3104,6 +3104,64 @@ begin
   CheckInt(S.WinKind, 0, 'Clear after a vertical split');
 end;
 
+procedure TestPrintFile;
+var
+  sh, sh2: TSheet;
+  info, info2: TFileInfo;
+  w: TStringList;
+  fn, msg: string;
+begin
+  fn := TmpDir + '/pr.wk1';
+  sh := TSheet.Create;
+  sh.Put(1, 1, '''x');
+  FillChar(info, SizeOf(info), 0);
+  info.CursorCol := 1; info.CursorRow := 1; info.LeftCol := 1; info.TopRow := 1;
+  ResetPrint(info.Print);
+  info.Print.RangeSet := True;
+  info.Print.Range := NormRange(2, 3, 20, 8);
+  info.Print.Header := 'Report|Café|Page #';
+  info.Print.Footer := '@';
+  info.Print.Setup := '\015';
+  info.Print.Left := 2; info.Print.Right := 60; info.Print.PgLength := 55; info.Print.Top := 3; info.Print.Bottom := 1;
+  info.Print.BorderRowsSet := True; info.Print.BorderRows := NormRange(1, 1, 2, 1);
+  info.Print.BorderColsSet := True; info.Print.BorderCols := NormRange(1, 1, 1, 3);
+  info.Print.Unformatted := True;
+  w := TStringList.Create;
+  msg := SaveWorksheet(fn, sh, False, info, w);
+  CheckStr(msg, '', 'save with print settings');
+  sh2 := TSheet.Create;
+  msg := LoadWorksheet(fn, sh2, w, info2);
+  CheckStr(msg, '', 'load it again');
+  Check(info2.Print.RangeSet, 'the print range is kept');
+  CheckInt(info2.Print.Range.R1, 2, 'range first row');
+  CheckInt(info2.Print.Range.C1, 3, 'range first column');
+  CheckInt(info2.Print.Range.R2, 20, 'range last row');
+  CheckInt(info2.Print.Range.C2, 8, 'range last column');
+  CheckStr(info2.Print.Header, 'Report|Café|Page #', 'the header, with an accent');
+  CheckStr(info2.Print.Footer, '@', 'the footer');
+  CheckStr(info2.Print.Setup, '\015', 'the setup string');
+  CheckInt(info2.Print.Left, 2, 'left margin');
+  CheckInt(info2.Print.Right, 60, 'right margin');
+  CheckInt(info2.Print.PgLength, 55, 'page length');
+  CheckInt(info2.Print.Top, 3, 'top margin');
+  CheckInt(info2.Print.Bottom, 1, 'bottom margin');
+  Check(info2.Print.BorderRowsSet and (info2.Print.BorderRows.R2 = 2), 'border rows');
+  Check(info2.Print.BorderColsSet and (info2.Print.BorderCols.C2 = 3), 'border columns');
+  Check(info2.Print.Unformatted, 'unformatted');
+  { a file with no print settings gets the defaults }
+  FillChar(info, SizeOf(info), 0);
+  info.CursorCol := 1; info.CursorRow := 1; info.LeftCol := 1; info.TopRow := 1;
+  msg := SaveWorksheet(fn, sh, False, info, w);
+  msg := LoadWorksheet(fn, sh2, w, info2);
+  Check(not info2.Print.RangeSet, 'no print range');
+  CheckInt(info2.Print.PgLength, 66, 'default page length');
+  CheckInt(info2.Print.Right, 76, 'default right margin');
+  CheckStr(info2.Print.Header, '', 'no header');
+  w.Free;
+  sh.Free;
+  sh2.Free;
+end;
+
 procedure TestRefEdit;
 var
   s: string;
@@ -3231,6 +3289,7 @@ begin
   TestRefEdit;
   TestPrint;
   TestWindows;
+  TestPrintFile;
   WriteLn(Total - Fails, '/', Total, ' checks passed');
   if Fails > 0 then Halt(1);
 end.

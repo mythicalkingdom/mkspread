@@ -26,7 +26,11 @@ stays open: Range, Line, Page, Options, Clear, Align, Go, Quit.  The text made b
   margins, headers, footers, borders and page breaks.
 - Setup string: `\nnn` is the byte with decimal code nnn.
 
-The settings are kept while the program runs but are not saved in worksheet files.
+The print range, header, footer, setup string, margins, page length, borders and
+Formatted/Unformatted are saved in `.WK1` files and restored by File Retrieve (a file
+without them gets the defaults).  Cell-Formulas is not saved (no known record), and
+neither is the paper position or the print destination.  Header and footer strings
+that hold control characters (left-over memory in some old files) are ignored.
 The paper position is remembered between jobs (as in the original): Go does not
 finish the last page; `Page` does, and `Align` says the paper is at the top.  A job
 that starts mid-page has no top margin or header (the page already has one).

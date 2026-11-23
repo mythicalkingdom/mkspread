@@ -39,7 +39,7 @@ procedure OpenFileChoices(S: TSession; const patterns: string; quiet: Boolean = 
 
 implementation
 
-uses SysUtils, sheet, wk1, formula, calc, editops, textimport, cellfmt;
+uses SysUtils, sheet, wk1, formula, calc, editops, textimport, cellfmt, printing;
 
 const
   WorksheetPatterns = '*.WK1;*.WKS';
@@ -183,6 +183,7 @@ begin
     Result := LoadWorksheet(fileName, S.Sheet, warn, info);
     if Result <> '' then exit;
     S.ForgetUndo;
+    CopyFilePrintSettings(S.Print, info.Print);       { the file's print settings (or the defaults) }
     S.FileName := fileName;
     S.CurCol := info.CursorCol;
     S.CurRow := info.CursorRow;
@@ -235,6 +236,7 @@ begin
   info.CursorRow := S.CurRow;
   info.LeftCol := S.LeftCol;
   info.TopRow := S.TopRow;
+  info.Print := S.Print;
   warn := TStringList.Create;
   try
     msg := SaveWorksheet(p, S.Sheet, IsWks(p), info, warn);

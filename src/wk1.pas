@@ -27,7 +27,7 @@ unit wk1;
 
 interface
 
-uses Classes, SysUtils, sheet, formula;
+uses Classes, SysUtils, sheet, formula, printing;
 
 type
   TFileInfo = record
@@ -36,6 +36,7 @@ type
     LeftCol, TopRow: Integer;      { screen position (writing) }
     Formulas: Integer;             { formulas read }
     FormulasLost: Integer;         { formulas kept only as their last value }
+    Print: TPrintSettings;         { /Print settings kept in the file }
   end;
 
 { Replace the contents of sh with the file's.  Returns '' or an error message;
@@ -500,6 +501,24 @@ begin
     isStr := True;
 end;
 
+{ a NUL-terminated string in a record; text that holds control characters (left-over
+  memory in files that never had a header) counts as empty }
+function ReadZ(const body: TBytes; ln: Integer): string;
+var
+  i: Integer;
+  s: string;
+begin
+  s := '';
+  i := 0;
+  while (i < ln) and (body[i] <> 0) do
+  begin
+    if body[i] < 32 then exit('');
+    s := s + Chr(body[i]);
+    Inc(i);
+  end;
+  Result := LicsToUtf8(s);
+end;
+
 function LoadWorksheet(const fn: string; sh: TSheet; warnings: TStrings; out info: TFileInfo): string;
 var
   fs: TFileStream;
@@ -531,6 +550,7 @@ begin
   FillChar(info, SizeOf(info), 0);
   info.CursorCol := 1;
   info.CursorRow := 1;
+  ResetPrint(info.Print);
   try
     fs := TFileStream.Create(fn, fmOpenRead or fmShareDenyNone);
   except
@@ -621,6 +641,45 @@ begin
           c := W16(body, 0) + 1;
           if (c >= 1) and (c <= MaxCol) and (body[2] >= 1) then sh.SetColWidth(c, body[2]);
         end;
+      $1A:
+        if (ln >= 8) and (W16(body, 0) <> $FFFF) and (W16(body, 4) <> $FFFF) then
+        begin
+          info.Print.RangeSet := True;
+          info.Print.Range := NormRange(W16(body, 2) + 1, W16(body, 0) + 1, W16(body, 6) + 1, W16(body, 4) + 1);
+        end;
+      $25: info.Print.Footer := ReadZ(body, ln);
+      $26: info.Print.Header := ReadZ(body, ln);
+      $27: info.Print.Setup := ReadZ(body, ln);
+      $28:
+        if ln >= 10 then
+        begin
+          { the margins of a file that was never set up can hold anything: keep the defaults then }
+          if (W16(body, 2) > W16(body, 0)) and (W16(body, 2) <= 240) and (W16(body, 4) >= 1) and
+             (W16(body, 4) <= 100) and (W16(body, 6) <= 32) and (W16(body, 8) <= 32) then
+          begin
+            info.Print.Left := W16(body, 0);
+            info.Print.Right := W16(body, 2);
+            info.Print.PgLength := W16(body, 4);
+            info.Print.Top := W16(body, 6);
+            info.Print.Bottom := W16(body, 8);
+          end;
+        end;
+      $2A:
+        if ln >= 16 then
+        begin
+          if (W16(body, 0) <> $FFFF) and (W16(body, 4) <> $FFFF) then
+          begin
+            info.Print.BorderRowsSet := True;
+            info.Print.BorderRows := NormRange(W16(body, 2) + 1, W16(body, 0) + 1, W16(body, 6) + 1, W16(body, 4) + 1);
+          end;
+          if (W16(body, 8) <> $FFFF) and (W16(body, 12) <> $FFFF) then
+          begin
+            info.Print.BorderColsSet := True;
+            info.Print.BorderCols := NormRange(W16(body, 10) + 1, W16(body, 8) + 1, W16(body, 14) + 1, W16(body, 12) + 1);
+          end;
+        end;
+      $30:
+        if ln >= 1 then info.Print.Unformatted := body[0] <> 0;
       $29:
         if ln >= 1 then
           case body[0] of
@@ -869,6 +928,19 @@ begin
   QS(0, n - 1);
 end;
 
+{ a string as a record body of n bytes: NUL-terminated, padded with zeros }
+function ZBytes(const s: string; n: Integer): TBytes;
+var
+  l: string;
+  i: Integer;
+begin
+  l := Utf8ToLics(s);
+  if Length(l) > n - 1 then l := Copy(l, 1, n - 1);
+  SetLength(Result, n);
+  for i := 0 to n - 1 do
+    if i < Length(l) then Result[i] := Ord(l[i + 1]) else Result[i] := 0;
+end;
+
 function SaveWorksheet(const fn: string; sh: TSheet; wks: Boolean; const info: TFileInfo;
                        warnings: TStrings): string;
 var
@@ -881,6 +953,7 @@ var
   d: Double;
   fmt: Byte;
   p: Char;
+  pr: TPrintSettings;
   t, label_: string;
   names: TStringList;
   g: TRange;
@@ -913,6 +986,8 @@ var
 
 begin
   Result := '';
+  pr := info.Print;
+  if pr.PgLength = 0 then ResetPrint(pr);                   { the caller had none: the defaults }
   w := TWriter.Create;
   names := TStringList.Create;
   try
@@ -1008,8 +1083,14 @@ begin
       w.Rec($18, b);                                          { data table }
       SetLength(b, 0); for c := 1 to 24 do PutB(b, $FF); PutB(b, 0);
       w.Rec($19, b);                                          { query }
-      w.Rec($1A, FFBytes(8));                                 { print range }
-      w.Rec1($30, 0);
+      SetLength(b, 0);                                        { print range }
+      if pr.RangeSet then
+      begin
+        PutW(b, pr.Range.C1 - 1); PutW(b, pr.Range.R1 - 1); PutW(b, pr.Range.C2 - 1); PutW(b, pr.Range.R2 - 1);
+      end
+      else for c := 1 to 8 do PutB(b, $FF);
+      w.Rec($1A, b);
+      if pr.Unformatted then w.Rec1($30, 1) else w.Rec1($30, 0);
       w.Rec($1C, FFBytes(8));
       w.Rec($1B, FFBytes(8));
       SetLength(b, 0); for c := 1 to 8 do PutB(b, $FF); PutB(b, 2);
@@ -1020,15 +1101,34 @@ begin
       w.Rec($20, FFBytes(16));
     end;
     w.Rec1($24, 0);                                           { global protection off }
+    { /Print settings: footer, header, setup string, margins }
+    w.Rec($25, ZBytes(pr.Footer, 242));
+    w.Rec($26, ZBytes(pr.Header, 242));
+    w.Rec($27, ZBytes(pr.Setup, 40));
+    SetLength(b, 0);
+    PutW(b, pr.Left); PutW(b, pr.Right); PutW(b, pr.PgLength); PutW(b, pr.Top); PutW(b, pr.Bottom);
+    w.Rec($28, b);
     case sh.GlobalLabelPrefix of
       '"': w.Rec1($29, $22);
       '^': w.Rec1($29, $5E);
     else
       w.Rec1($29, $27);
     end;
-    { print borders (/Print Options Borders): not tracked, written as unset.  Frozen
-      worksheet titles are in WINDOW1. }
-    w.Rec($2A, FFBytes(16));
+    { print borders: rows first, then columns.  Frozen worksheet titles are in WINDOW1. }
+    SetLength(b, 0);
+    if pr.BorderRowsSet then
+    begin
+      PutW(b, pr.BorderRows.C1 - 1); PutW(b, pr.BorderRows.R1 - 1);
+      PutW(b, pr.BorderRows.C2 - 1); PutW(b, pr.BorderRows.R2 - 1);
+    end
+    else for c := 1 to 8 do PutB(b, $FF);
+    if pr.BorderColsSet then
+    begin
+      PutW(b, pr.BorderCols.C1 - 1); PutW(b, pr.BorderCols.R1 - 1);
+      PutW(b, pr.BorderCols.C2 - 1); PutW(b, pr.BorderCols.R2 - 1);
+    end
+    else for c := 1 to 8 do PutB(b, $FF);
+    w.Rec($2A, b);
 
     if not wks then
     begin

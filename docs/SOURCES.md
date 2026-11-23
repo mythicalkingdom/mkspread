@@ -30,3 +30,5 @@ used, with where it came from, when it is used.
   contents.  Header, footer and graph records in the samples contain leftover
   memory fragments rather than clean defaults; they were deliberately not
   copied and this program does not write those records.
+
+- Print records (PRANGE 0x1A, FOOTER 0x25, HEADER 0x26, SETUP 0x27, MARGINS 0x28, TITLES 0x2A, UNFORMATTED 0x30): layouts from the same *Worksheet File Format* text (WSFF2), confirmed by reading the print margins, ranges and setup strings of the sample files (for example margins 0/132/60 and setup `\015`).  The sample files' header and footer contents are not used.
