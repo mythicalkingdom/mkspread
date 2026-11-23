@@ -13,7 +13,7 @@ stays open: Range, Line, Page, Options, Clear, Align, Go, Quit.  The text made b
 ## Layout
 - Page length 66 by default.  A page is: top margin lines, the header, two blank
   lines, the text, two blank lines, the footer, bottom margin lines; with the
-  defaults 56 lines of text.  The header and footer are always reserved.
+  defaults 56 lines of text.  The header and footer lines are always reserved.
 - The text is `Right - Left` characters wide, indented by the left margin (default 4
   and 76).  A wider range is printed in groups of columns, the first group down
   all pages, then the next; border columns come first in every group, border rows
@@ -27,8 +27,9 @@ stays open: Range, Line, Page, Options, Clear, Align, Go, Quit.  The text made b
 - Setup string: `\nnn` is the byte with decimal code nnn.
 
 The settings are kept while the program runs but are not saved in worksheet files.
-Not done: Line/Page/Align do not track the printer position exactly; Go always
-finishes the last page including its footer.
+The paper position is remembered between jobs (as in the original): Go does not
+finish the last page; `Page` does, and `Align` says the paper is at the top.  A job
+that starts mid-page has no top margin or header (the page already has one).
 
 ## Checking against the original program
 `make printsheet` writes `private-samples/PRINT.WK1` (13 print jobs, macro `\R`) and

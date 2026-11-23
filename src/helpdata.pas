@@ -409,7 +409,8 @@ begin
     'groups of columns, the first group down all the pages, then the next group.|' +
     'In the print range, a row whose first cell is a label starting with the|' +
     'vertical bar prefix is not printed, and one that holds |:: starts a new page|' +
-    '(/Worksheet Page puts such a row above the pointer).',
+    '(/Worksheet Page puts such a row above the pointer).  Go leaves the last page|' +
+    'unfinished; Page finishes it.  The paper position is kept between jobs.',
     'm:print options,m:print')
 
   ;
