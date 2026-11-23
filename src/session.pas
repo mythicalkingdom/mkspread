@@ -68,6 +68,7 @@ type
 
     { menu navigation: level d shows MenuNodes[d].Kids, highlight MenuIdx[d] }
     MenuDepth: Integer;
+    ReturnPath: string;                  { a menu to open again when the command is finished }
     MenuNodes: array[0..15] of TMenuNode;
     MenuIdx: array[0..15] of Integer;
 
@@ -78,6 +79,7 @@ type
     PromptPath: string;
     PromptLive: TPromptLive;
     PromptOrigWidth: Integer;
+    PromptFresh: Boolean;               { the default is still untouched: typing replaces it }
     PromptIsText: Boolean;              { a text prompt rather than a number }
     PromptStr: string;                  { its answer }
 
@@ -317,6 +319,7 @@ begin
   PromptFilter := '';
   Entry := def;
   EditPos := U8Len(def);
+  PromptFresh := def <> '';
 end;
 
 function TSession.OpenNameList: Boolean;

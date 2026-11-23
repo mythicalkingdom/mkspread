@@ -24,6 +24,13 @@ testsheet: build/make_testsheet
 build/make_macrosheet: $(SRCS) tests/make_macrosheet.pas
 	$(FPC) $(FLAGS) tests/make_macrosheet.pas
 
+build/make_datasheet: $(SRCS) tests/make_datasheet.pas
+	$(FPC) $(FLAGS) tests/make_datasheet.pas
+
+datasheet: build/make_datasheet
+	mkdir -p private-samples
+	./build/make_datasheet private-samples/DATA.WK1
+
 macrosheet: build/make_macrosheet
 	mkdir -p private-samples
 	./build/make_macrosheet private-samples/MACROS.WK1
@@ -43,4 +50,4 @@ clean:
 	rm -f build/*
 	touch build/.gitkeep
 
-.PHONY: all run demo test testsheet macrosheet clean
+.PHONY: all run demo test testsheet macrosheet datasheet clean

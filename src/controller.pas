@@ -44,6 +44,7 @@ type
     procedure PromptKey(k: Integer);
     procedure PointKey(k: Integer);
     procedure MenuKey(k: Integer);
+    procedure Reopen(const path: string);
     function CommitText(const text: string): Boolean;
     procedure StartEdit;
     procedure SelectItem(i: Integer);
@@ -387,6 +388,15 @@ end;
 
 procedure TController.TextPromptKey(k: Integer);
 begin
+  if FS.PromptFresh then
+  begin
+    FS.PromptFresh := False;
+    if (k >= 32) and (k < kSpecialBase) and (k <> 127) then
+    begin
+      FS.Entry := '';
+      FS.EditPos := 0;
+    end;
+  end;
   if EditText(k) then exit;
   case k of
     kEnter:
@@ -642,7 +652,8 @@ end;
 
 procedure TController.SelectItem(i: Integer);
 var
-  d: Integer;
+  d, p: Integer;
+  path: string;
   kid: TMenuNode;
 begin
   d := FS.MenuDepth;
@@ -656,7 +667,44 @@ begin
     exit;
   end;
   FS.Mode := mReady;
-  FCmds.Run(FS.MenuPath(d), FS);
+  path := FS.MenuPath(d);
+  FS.ReturnPath := '';
+  if (Pos('Data Sort ', path) = 1) or (Pos('Data Query ', path) = 1) or
+     (Pos('Data Regression ', path) = 1) or (Pos('Data Parse ', path) = 1) then
+    if not path.EndsWith(' Quit') and (path <> 'Data Sort Go') then
+    begin
+      p := Pos(' ', Copy(path, 6, MaxInt));
+      FS.ReturnPath := Copy(path, 1, 5 + p - 1);
+    end;
+  FCmds.Run(path, FS);
+end;
+
+{ opens the menu again at a submenu such as "Data Sort" }
+procedure TController.Reopen(const path: string);
+var
+  rest, nm: string;
+  p, i, d: Integer;
+begin
+  FS.OpenMenu;
+  rest := path;
+  while rest <> '' do
+  begin
+    p := Pos(' ', rest);
+    if p = 0 then begin nm := rest; rest := ''; end
+    else begin nm := Copy(rest, 1, p - 1); rest := Copy(rest, p + 1, MaxInt); end;
+    d := FS.MenuDepth;
+    i := FS.MenuNodes[d].FindByInitial(nm[1]);
+    if (i < 0) or (FS.MenuNodes[d][i].Name <> nm) then
+    begin
+      for i := 0 to FS.MenuNodes[d].Count - 1 do
+        if FS.MenuNodes[d][i].Name = nm then break;
+      if i >= FS.MenuNodes[d].Count then exit;
+    end;
+    FS.MenuIdx[d] := i;
+    Inc(FS.MenuDepth);
+    FS.MenuNodes[FS.MenuDepth] := FS.MenuNodes[d][i];
+    FS.MenuIdx[FS.MenuDepth] := 0;
+  end;
 end;
 
 procedure TController.MenuKey(k: Integer);
@@ -707,6 +755,11 @@ begin
     mPoint: PointKey(k);
     mNames: NamesKey(k);
     mFind: FindKey(k);
+  end;
+  if (FS.Mode = mReady) and (FS.ReturnPath <> '') then
+  begin
+    Reopen(FS.ReturnPath);
+    FS.ReturnPath := '';
   end;
   FS.EndChange;
 end;

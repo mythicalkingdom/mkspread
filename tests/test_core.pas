@@ -2151,6 +2151,8 @@ var
 
   procedure Go(const keys: string);
   begin
+    { the Sort, Query ... menus come back after a command: leave them first }
+    while (S.Mode = mMenu) and (keys <> '') and (keys[1] = '/') do Ctl.HandleKey(kEsc);
     q.PushString(keys);
     while not q.Empty do Ctl.HandleKey(q.Pop);
   end;
@@ -2226,7 +2228,7 @@ begin
     Ctl.HandleKey(kEnd);
     CheckInt(S.CurRow, 4, 'End is the last match');
     Ctl.HandleKey(kEsc);
-    Check(S.Mode = mReady, 'Esc leaves FIND mode');
+    Check(S.Mode = mMenu, 'Esc leaves FIND mode (the Query menu comes back)');
     CheckInt(S.CurRow, 1, 'and puts the pointer back');
     Go('/dqe');
     CheckStr(RawAt(S, 10, 1) + RawAt(S, 11, 1), '''Ann''Cy', '/Data Query Extract');

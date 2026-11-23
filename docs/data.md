@@ -13,6 +13,15 @@
 | `/Data Regression` | X-Range (one or more columns), Y-Range, Output-Range, Intercept Compute or Zero, Reset, Go. |
 | `/Data Parse` | Format-Line Create/Edit, Input-Column, Output-Range, Reset, Go: split long labels into cells. |
 
+## Menus and prompts
+- The Sort, Query, Regression and Parse menus come back after each setting or
+  action (Esc or Quit leaves them); Sort's Go is the exception and ends the menu.
+  Esc at a prompt returns to the menu.
+- Typing at a prompt that shows a default (Sort order `A`, Fill's Start/Step/Stop,
+  the file name in /File Save) replaces the default; cursor keys edit it instead.
+- Query Extract with an output range of only the field-name row clears and uses
+  every row below it; give the output range several rows to limit it.
+
 ## Details
 - **Sort:** numbers come before text, text in character order (capitals first),
   empty cells always last; ties keep their order.  Formulas move with their rows

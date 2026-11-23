@@ -215,3 +215,9 @@ with the original program yet:
 - `{?}` resumes on Enter and that Enter is not typed; prompts of `{GETLABEL}`/`{GETNUMBER}` must be quoted strings.
 - The original program used for testing has no `/Worksheet Learn` (Learn arrived in release 2.2), so Learn/Alt-F5 recording
   is an mkspread extension that could not be compared. Alt-F2 (STEP) was intercepted by the host OS/terminal, so STEP is unverified too.
+
+## Assumed, to be checked with DATA.WK1 (tests/make_datasheet.pas)
+- After Reset/Find/Extract/Unique/Delete and the settings in Sort, Query, Regression and Parse the submenu comes back; Sort Go and Quit end it.
+- Typing at a prompt with a default replaces the default.
+- Regression/Parse output layout, Distribution bin edges, sort order of mixed text/numbers/blanks, Query wildcard/not/formula criteria.
+- Every DATA.WK1 test ends by typing `q7`: the cell holds 7 if a menu was still open, `q7` if not.
