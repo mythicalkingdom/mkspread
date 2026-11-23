@@ -143,7 +143,7 @@ begin
     'F1  help                        F6  window (not yet available)|' +
     'F2  edit the current cell       F7  repeat the last Data Query|' +
     'F3  list names or files         F8  repeat the last Data Table|' +
-    'F4  (absolute toggle: not yet)   F9  recalculate|' +
+    'F4  absolute / relative cycle   F9  recalculate|' +
     'F5  go to a cell                F10 graph (graphs are not supported)|' +
     '|' +
     'Alt-F2  STEP on or off          Alt-F4  undo|' +
@@ -164,6 +164,9 @@ begin
     'the default.  Text that looks like a number needs a prefix.|' +
     '|' +
     'Esc cancels an entry, Backspace deletes a character, F2 edits it.|' +
+    'In a formula, after an operator, ( or comma, an arrow key points at a cell|' +
+    'instead of ending the entry (POINT): the address is typed for you.  Press .|' +
+    'to anchor a range, F4 to make the reference absolute, then go on typing.|' +
     'An arrow key ends the entry and moves the pointer.',
     'editing,formulas');
 
@@ -174,7 +177,7 @@ begin
     '  Enter           store the result       Esc          give up|' +
     '  Up / Down       store the result and move the pointer|' +
     '|' +
-    'Type $ before a column letter or row number to make it absolute.|' +
+    'F4 cycles the reference next to the cursor: A1, $A$1, A$1, $A1.|' +
     'If a formula is wrong, mkspread leaves you in EDIT mode at the problem.',
     'entry,formulas');
 

@@ -86,8 +86,8 @@ check(s.line(1).startswith('S4:') or s.line(1).startswith('T4:') or s.line(1)[0]
       'Ctrl-Right moves a screen right', s.line(1))
 s.send('\x1bx')      # Alt-X
 check('No macro \\X is defined' in s.line(25), 'Alt-letter recognised', s.line(25))
-s.send('\x1bOS')     # F4 (xterm)
-check('F4' in s.line(25), 'F4 recognised', s.line(25))
+s.send('\x1bOS')     # F4 (xterm) does nothing in READY
+check(s.line(1).endswith('READY'), 'F4 in READY is harmless', s.line(1))
 s.send('\x1b[1;3S')  # Alt-F4
 check('Nothing to undo' in s.line(25), 'Alt-F4 recognised as Undo', s.line(25))
 s.send('\x15')       # Ctrl-U equivalent
@@ -340,6 +340,29 @@ s.send('d')                      # replaces the default A
 s.send('\r')
 check(s.line(1).endswith('MENU'), 'the Sort menu returns after a key', s.line(1))
 s.send('\x1b\x1b')
+s.send('/qy', 0.4)
+s.close()
+
+# ---- F4 and pointing in formulas ----
+s = run()
+s.send('5\r')                       # A1 = 5
+s.send('\x1b[B')                    # A2
+s.send('+a1')
+s.send('\x1bOS')                    # F4: $A$1
+check(s.line(2).startswith('+$A$1'), 'F4 makes the reference absolute', s.line(2))
+s.send('\x1bOS')
+check(s.line(2).startswith('+A$1'), 'F4 again: row absolute', s.line(2))
+s.send('\x1bOS'); s.send('\x1bOS')
+check(s.line(2).startswith('+A1'), 'and back to relative', s.line(2))
+s.send('\x1b')
+s.send('+')
+s.send('\x1b[A')                    # point at A1 with the arrow
+check(s.line(1).endswith('POINT') and s.line(2).startswith('+A1'), 'an arrow after + points at a cell', s.line(1) + s.line(2))
+s.send('\x1bOS')
+check(s.line(2).startswith('+$A$1'), 'F4 while pointing', s.line(2))
+s.send('*2\r')
+check(s.line(1).startswith('A2:') and s.line(1).endswith('READY'), 'the pointer is back after the entry', s.line(1))
+check(s.line(6).rstrip().endswith('10'), 'the formula was entered (+$A$1*2 = 10)', s.line(6))
 s.send('/qy', 0.4)
 s.close()
 

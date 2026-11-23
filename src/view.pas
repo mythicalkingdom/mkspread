@@ -324,6 +324,7 @@ begin
     mHelp: mname := 'HELP';
   end;
   TermPut(1, 1, taNormal, PadR(st, w - Length(mname) - 1));
+  if S.FPActive then mname := 'POINT';
   if S.IndicatorText <> '' then mname := S.IndicatorText;
   TermPut(w - Length(mname) + 1, 1, taHi, mname);
 

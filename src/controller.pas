@@ -42,6 +42,12 @@ type
     procedure NamesKey(k: Integer);
     procedure FindKey(k: Integer);
     procedure HelpKey(k: Integer);
+    procedure ToggleAbsolute;
+    function CanPoint: Boolean;
+    procedure StartFormPoint(k: Integer);
+    procedure EndFormPoint(keepText: Boolean);
+    procedure RefreshFormPoint;
+    procedure FormPointKey(k: Integer);
     procedure OpenHelp;
     procedure ShowTopic(const id: string; remember: Boolean);
     procedure PromptKey(k: Integer);
@@ -63,7 +69,7 @@ type
 
 implementation
 
-uses keys, cellfmt, formula, menutree, u8edit, cmdfile, cmddata, helpdata, Classes, Math, SysUtils;
+uses keys, cellfmt, formula, menutree, u8edit, cmdfile, cmddata, helpdata, refedit, Classes, Math, SysUtils;
 
 { Alt-F3 picked a range name: start it as a macro }
 procedure RunNameChosen(S: TSession; const path: string);
@@ -233,7 +239,7 @@ begin
   case k of
     kF1 + 1: StartEdit;
     kF1 + 2: StubKey('F3 (NAME)');
-    kF1 + 3: StubKey('F4 (ABS)');
+    kF1 + 3: ;                                  { F4 only means something while typing }
     kF1 + 4:
       begin
         FS.Mode := mGoto;
@@ -411,6 +417,105 @@ begin
     kF1 + 2:
       if FS.PromptFilter <> '' then OpenFileChoices(FS, FS.PromptFilter)
       else FS.OpenNameList;
+  end;
+end;
+
+{ F4 (ABS) while typing or editing a formula }
+procedure TController.ToggleAbsolute;
+var
+  pos: Integer;
+begin
+  if (FS.Mode = mPoint) and not FS.Typing then exit;
+  if FS.Mode = mEdit then pos := FS.EditPos else pos := U8Len(FS.Entry);
+  if CycleAbsolute(FS.Entry, pos) then
+  begin
+    if FS.Mode = mEdit then FS.EditPos := pos;
+    if FS.FPActive then FS.FPLen := U8Len(FS.Entry) - FS.FPStart;
+  end;
+end;
+
+{ ---- pointing at cells while typing a formula ---- }
+
+{ true when the text ends where a cell reference could start (after an operator,
+  an opening parenthesis or a comma) }
+function TController.CanPoint: Boolean;
+var
+  n: Integer;
+begin
+  Result := False;
+  if FS.Mode <> mValue then exit;
+  n := Length(FS.Entry);
+  if n = 0 then exit;
+  Result := FS.Entry[n] in ['+', '-', '*', '/', '^', '(', ',', '&', '<', '>', '=', '#'];
+end;
+
+procedure TController.RefreshFormPoint;
+var
+  r: TRange;
+  t: string;
+begin
+  r := FS.Selection;
+  t := ColLetter(r.C1) + IntToStr(r.R1);
+  if (r.R1 <> r.R2) or (r.C1 <> r.C2) then t := t + '..' + ColLetter(r.C2) + IntToStr(r.R2);
+  FS.Entry := U8Copy(FS.Entry, 1, FS.FPStart) + t;
+  FS.FPLen := Length(t);
+end;
+
+procedure TController.StartFormPoint(k: Integer);
+begin
+  FS.FPActive := True;
+  FS.FPStart := U8Len(FS.Entry);
+  FS.OrigRow := FS.CurRow; FS.OrigCol := FS.CurCol;
+  FS.OrigTop := FS.TopRow; FS.OrigLeft := FS.LeftCol;
+  FS.Anchored := False;
+  NavKey(k);
+  RefreshFormPoint;
+end;
+
+procedure TController.EndFormPoint(keepText: Boolean);
+begin
+  if not keepText then FS.Entry := U8Copy(FS.Entry, 1, FS.FPStart);
+  FS.CurRow := FS.OrigRow; FS.CurCol := FS.OrigCol;
+  FS.TopRow := FS.OrigTop; FS.LeftCol := FS.OrigLeft;
+  FS.Anchored := False;
+  FS.FPActive := False;
+  FS.Normalize;
+end;
+
+procedure TController.FormPointKey(k: Integer);
+begin
+  case k of
+    kEsc, kBackspace:
+      if FS.Anchored then
+      begin
+        FS.Anchored := False;
+        RefreshFormPoint;
+      end
+      else
+        EndFormPoint(False);
+    kBreak:
+      begin
+        EndFormPoint(False);
+        EntryKey(k);
+      end;
+    Ord('.'):
+      begin
+        if not FS.Anchored then
+        begin
+          FS.Anchored := True;
+          FS.AnchorR := FS.CurRow;
+          FS.AnchorC := FS.CurCol;
+        end;
+        RefreshFormPoint;
+      end;
+  else
+    if NavKey(k) then RefreshFormPoint
+    else
+    begin
+      { anything else ends the pointing and is typed as usual }
+      EndFormPoint(True);
+      EntryKey(k);
+    end;
   end;
 end;
 
@@ -859,6 +964,31 @@ begin
   if k = kAltF1 + 1 then begin FS.StepOn := not FS.StepOn; exit; end;
   if k = kAltF1 + 4 then begin FS.Msg := ''; FS.ToggleLearn; exit; end;
   if (k = kF1) and (FS.Mode <> mHelp) then begin FS.Msg := ''; OpenHelp; exit; end;
+  if FS.FPActive and (FS.Mode = mValue) and (k <> kF1) and (k <> kF1 + 3) then
+  begin
+    FS.Msg := '';
+    FEnd := FS.EndMode;
+    if k <> kEnd then FS.EndMode := False;
+    FormPointKey(k);
+    FS.EndChange;
+    exit;
+  end;
+  if (FS.Mode = mValue) and not FS.FPActive and CanPoint and
+     ((k = kUp) or (k = kDown) or (k = kLeft) or (k = kRight) or (k = kPgUp) or (k = kPgDn) or
+      (k = kCtrlLeft) or (k = kCtrlRight) or (k = kTab) or (k = kShiftTab)) then
+  begin
+    FS.Msg := '';
+    FEnd := False;
+    StartFormPoint(k);
+    FS.EndChange;
+    exit;
+  end;
+  if (k = kF1 + 3) and (FS.Mode in [mValue, mEdit, mPoint]) then
+  begin
+    FS.Msg := '';
+    ToggleAbsolute;
+    exit;
+  end;
   FS.Msg := '';
   FEnd := FS.EndMode;
   if k <> kEnd then FS.EndMode := False;

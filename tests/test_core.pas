@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata;
+uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata, refedit;
 
 var
   Fails, Total: Integer;
@@ -2866,6 +2866,36 @@ begin
   Cmds.Free;
 end;
 
+procedure TestRefEdit;
+var
+  s: string;
+  p: Integer;
+
+  function Cycle(const text: string; at: Integer): string;
+  begin
+    s := text;
+    p := at;
+    if CycleAbsolute(s, p) then Result := s else Result := '(none)';
+  end;
+
+begin
+  CheckStr(Cycle('+A1', 3), '+$A$1', 'F4: relative to absolute');
+  CheckStr(Cycle('+$A$1', 5), '+A$1', 'F4: absolute to row absolute');
+  CheckStr(Cycle('+A$1', 4), '+$A1', 'F4: row absolute to column absolute');
+  CheckStr(Cycle('+$A1', 4), '+A1', 'F4: column absolute to relative');
+  CheckStr(Cycle('+A1+B2', 6), '+A1+$B$2', 'the reference before the cursor');
+  CheckStr(Cycle('+A1+B2', 3), '+$A$1+B2', 'the reference the cursor is next to');
+  CheckStr(Cycle('@SUM(A1..B3)', 12), '@SUM($A$1..$B$3)', 'both corners of a range');
+  CheckStr(Cycle('@SUM(A1..B3)', 7), '@SUM($A$1..$B$3)', 'a range from its first corner');
+  CheckStr(Cycle('+"A1"', 5), '(none)', 'text in quotes is left alone');
+  CheckStr(Cycle('@LOG10(5)', 9), '(none)', 'a function name is not a reference');
+  CheckStr(Cycle('+TAX1', 5), '(none)', 'a range name is not a reference');
+  CheckInt(p, 5, 'the cursor stays after a name');
+  Cycle('+A1', 3);
+  CheckInt(p, 5, 'the cursor moves to the end of the changed reference');
+  CheckStr(Cycle('+aa10', 5), '+$AA$10', 'two-letter columns and lower case');
+end;
+
 procedure TestHelp;
 var
   i, j, n: Integer;
@@ -2958,6 +2988,7 @@ begin
   TestKeys;
   TestController;
   TestHelp;
+  TestRefEdit;
   WriteLn(Total - Fails, '/', Total, ' checks passed');
   if Fails > 0 then Halt(1);
 end.

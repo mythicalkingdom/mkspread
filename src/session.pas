@@ -117,6 +117,8 @@ type
     Anchored, Typing: Boolean;
     AnchorR, AnchorC: Integer;
     OrigRow, OrigCol, OrigTop, OrigLeft: Integer;
+    FPActive: Boolean;                  { pointing at cells while typing a formula }
+    FPStart, FPLen: Integer;            { where the reference text is in the entry }
     Range: TRange;                      { result of the last range prompt }
 
     PendFmt: TCellFormat;               { scratch for multi-step commands }
@@ -467,7 +469,7 @@ function TSession.Selection: TRange;
 begin
   if (Mode = mFind) and Data.QInSet then
     Result := NormRange(CurRow, Data.QIn.C1, CurRow, Data.QIn.C2)
-  else if (Mode = mPoint) and Anchored then
+  else if ((Mode = mPoint) or FPActive) and Anchored then
     Result := NormRange(AnchorR, AnchorC, CurRow, CurCol)
   else
     Result := NormRange(CurRow, CurCol, CurRow, CurCol);
