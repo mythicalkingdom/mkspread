@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata, refedit, printing, cmdprint;
+uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata, refedit, printing, cmdprint, config, recovery, version;
 
 var
   Fails, Total: Integer;
@@ -3162,6 +3162,64 @@ begin
   sh2.Free;
 end;
 
+procedure TestRecovery;
+var
+  cfg: TConfig;
+  S, S2: TSession;
+  st: TStale;
+  dir, warn, msg: string;
+  sl: TStringList;
+begin
+  DefaultConfig(cfg);
+  CheckInt(cfg.RecoverySeconds, 30, 'default recovery interval');
+  CheckInt(cfg.AutosaveMinutes, 0, 'autosave is off by default');
+  msg := ParseConfig('# a comment'#10'autosave = 5'#10'recovery=10 # often'#10'expand = yes'#10, cfg);
+  CheckStr(msg, '', 'a good configuration');
+  CheckInt(cfg.AutosaveMinutes, 5, 'autosave read');
+  CheckInt(cfg.RecoverySeconds, 10, 'recovery read');
+  Check(cfg.Expand, 'expand read');
+  msg := ParseConfig('autosave = lots'#10'colour = red'#10'nonsense'#10, cfg);
+  CheckInt(Length(msg.Split([#10])) - 1, 3, 'three problems are reported');
+  CheckInt(cfg.AutosaveMinutes, 5, 'a bad value changes nothing');
+
+  S := TSession.Create;
+  S.MarkSaved;
+  Check(not S.Modified, 'a new worksheet is not modified');
+  S.Sheet.Put(1, 1, '5');
+  S.CheckModified;
+  Check(S.Modified, 'a change is noticed');
+  dir := TmpDir + '/recover';
+  RecoveryDirOverride := dir;
+  S.FileName := 'budget.wk1';
+  WriteRecovery(S);
+  Check(FileExists(dir + '/' + IntToStr(GetProcessID) + '.wk1'), 'the recovery file is written');
+  RemoveRecovery;
+  Check(not FileExists(dir + '/' + IntToStr(GetProcessID) + '.wk1'), 'and removed');
+  st := FindStale;
+  Check(not st.Found, 'nothing to recover');
+  { a file left by a process that is gone }
+  ForceDirectories(dir);
+  S.FileName := 'old.wk1';
+  SaveSessionFile(S, dir + '/999999.wk1', warn);
+  sl := TStringList.Create;
+  sl.Add('old.wk1');
+  sl.Add('2026-01-02 03:04');
+  sl.SaveToFile(dir + '/999999.txt');
+  sl.Free;
+  st := FindStale;
+  Check(st.Found, 'a stale recovery file is found');
+  CheckStr(st.Original, 'old.wk1', 'with the name of the original');
+  CheckStr(st.When, '2026-01-02 03:04', 'and its time');
+  S2 := TSession.Create;
+  CheckStr(RetrieveFile(S2, st.Path), '', 'it loads');
+  CheckStr(RawAt(S2, 1, 1), '5', 'with the data');
+  DeleteStale(st);
+  Check(not FindStale.Found, 'and can be deleted');
+  RecoveryDirOverride := '';
+  CheckStr(VersionText.Split([#10])[0], 'mkspread ' + ProgramVersion, 'the version line');
+  Check(Pos('1-2-3', VersionText) + Pos('Lotus', VersionText) = 0, 'no trademarked names in the version text');
+end;
+
 procedure TestRefEdit;
 var
   s: string;
@@ -3290,6 +3348,7 @@ begin
   TestPrint;
   TestWindows;
   TestPrintFile;
+  TestRecovery;
   WriteLn(Total - Fails, '/', Total, ' checks passed');
   if Fails > 0 then Halt(1);
 end.

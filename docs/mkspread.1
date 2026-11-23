@@ -1,0 +1,47 @@
+.TH MKSPREAD 1 "2026" "mkspread" "User Commands"
+.SH NAME
+mkspread \- a terminal spreadsheet with the menus and keystrokes of the classic DOS spreadsheets
+.SH SYNOPSIS
+.B mkspread
+[\fIoptions\fR] [\fIfile\fR]
+.SH DESCRIPTION
+.B mkspread
+is a spreadsheet for the terminal.  It looks and works like the Release 2 DOS
+spreadsheets: the \fB/\fR menu, the same keystrokes, formulas, @functions, macros
+and the \fB.WK1\fR and \fB.WKS\fR file formats.  Press \fBF1\fR for help.
+.SH OPTIONS
+.TP
+.B \-\-demo
+Start with a sample worksheet.
+.TP
+.B \-\-expand
+Use the whole terminal instead of 80x25.
+.TP
+.BI \-\-autosave= N
+Save the worksheet to its file every \fIN\fR minutes when it has changed (0 = off).
+.TP
+.B \-\-keytest
+Show how the terminal's keys are received.
+.TP
+.B \-\-version
+Print the version and licence.
+.TP
+.B \-\-help
+Print a short usage text.
+.SH FILES
+.TP
+.I ~/.config/mkspread/mkspread.conf
+Settings: \fBautosave\fR (minutes), \fBrecovery\fR (seconds), \fBexpand\fR (yes/no).
+.TP
+.I ~/.local/state/mkspread/recover/
+While a worksheet has unsaved changes a copy is kept here; if the program or the
+terminal dies, the next start offers to recover it.  A normal exit removes it.
+.SH ENVIRONMENT
+.TP
+.B MKSPREAD_PRINT_COMMAND
+The command that receives printed text (default \fBlp\fR).
+.TP
+.B XDG_CONFIG_HOME, XDG_STATE_HOME
+Where the configuration and recovery files live.
+.SH LICENSE
+GNU General Public License, version 3 or later.  There is no warranty.

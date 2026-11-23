@@ -30,6 +30,9 @@ procedure RegisterFileCommands(C: TCommands);
   session's message line. }
 function RetrieveFile(S: TSession; const fileName: string): string;
 
+{ writes the worksheet to a file without making it the current file; returns an error or '' }
+function SaveSessionFile(S: TSession; const p: string; out warning: string): string;
+
 { names of the files in the current directory matching patterns such as
   '*.WK1;*.WKS' (case-insensitive), sorted }
 procedure ListFiles(const patterns: string; items: TStrings; withDirs: Boolean = False);
@@ -185,6 +188,7 @@ begin
     S.ForgetUndo;
     CopyFilePrintSettings(S.Print, info.Print);       { the file's print settings (or the defaults) }
     S.FileName := fileName;
+    S.MarkSaved;
     S.CurCol := info.CursorCol;
     S.CurRow := info.CursorRow;
     S.LeftCol := 1;
@@ -225,6 +229,26 @@ end;
 
 { ---------------------------------------------------------------- save }
 
+function SaveSessionFile(S: TSession; const p: string; out warning: string): string;
+var
+  info: TFileInfo;
+  warn: TStringList;
+begin
+  FillChar(info, SizeOf(info), 0);
+  info.CursorCol := S.CurCol;
+  info.CursorRow := S.CurRow;
+  info.LeftCol := S.LeftCol;
+  info.TopRow := S.TopRow;
+  info.Print := S.Print;
+  warn := TStringList.Create;
+  try
+    Result := SaveWorksheet(p, S.Sheet, IsWks(p), info, warn);
+    if warn.Count > 0 then warning := warn[0] else warning := '';
+  finally
+    warn.Free;
+  end;
+end;
+
 procedure DoSave(S: TSession; const p: string);
 var
   info: TFileInfo;
@@ -245,6 +269,7 @@ begin
     else
     begin
       S.FileName := p;
+      S.MarkSaved;
       if warn.Count > 0 then S.Msg := warn[0] else S.Msg := 'Saved ' + ExtractFileName(p);
     end;
   finally

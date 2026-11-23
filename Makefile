@@ -50,7 +50,22 @@ clean:
 	rm -f build/*
 	touch build/.gitkeep
 
-.PHONY: all run demo test testsheet macrosheet datasheet printsheet clean
+PREFIX  ?= /usr/local
+BINDIR  ?= $(PREFIX)/bin
+MANDIR  ?= $(PREFIX)/share/man
+DOCDIR  ?= $(PREFIX)/share/doc/mkspread
+
+install: all
+	install -d $(DESTDIR)$(BINDIR) $(DESTDIR)$(MANDIR)/man1 $(DESTDIR)$(DOCDIR)
+	install -m 755 build/mkspread $(DESTDIR)$(BINDIR)/mkspread
+	install -m 644 docs/mkspread.1 $(DESTDIR)$(MANDIR)/man1/mkspread.1
+	install -m 644 README.md COPYING docs/*.md $(DESTDIR)$(DOCDIR)/
+
+uninstall:
+	rm -f $(DESTDIR)$(BINDIR)/mkspread $(DESTDIR)$(MANDIR)/man1/mkspread.1
+	rm -rf $(DESTDIR)$(DOCDIR)
+
+.PHONY: all run demo test testsheet macrosheet datasheet printsheet clean install uninstall
 
 build/make_printsheet: $(SRCS) tests/make_printsheet.pas
 	$(FPC) $(FLAGS) tests/make_printsheet.pas

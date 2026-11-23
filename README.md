@@ -2,16 +2,16 @@
 
 A terminal spreadsheet for people who know the classic DOS spreadsheets:
 same screen layout, same `/` menu, same keystrokes.  Reads and writes
-`.WK1` / `.WKS` files (planned).  GPL-3.0-or-later.
+`.WK1` / `.WKS` files.  GPL-3.0-or-later.
 
-Status: **phase 9**: the `/Data` commands.  Working now: everything from
-phase 8 (formulas and the `@function` library, editing commands, range names,
-titles, worksheet files, macros with recording and step mode) plus `/Data`
-Fill, Table 1 and 2, Sort, Query (Find, Extract, Unique, Delete),
-Distribution, Matrix, Regression and Parse (see `docs/data.md`).  Not yet:
-`/Worksheet Window`, `/Print`, help screens, recovery/autosave, `.XLS`.  Every
-other menu command is still a stub.  Behaviour not yet verified is listed in
-`docs/compat-notes.md`; sources are in `docs/SOURCES.md`.
+Status: **0.10**.  Working: formulas and the `@function` library, editing
+commands, range names, titles, windows, worksheet files (`.WK1`, `.WKS`, text
+import), macros with recording and step mode, the `/Data` commands, `/Print`
+(to a file or through `lp`), context help (F1), F4 and pointing in formulas,
+recovery file and autosave (`docs/config.md`).  Not yet: `.XLS`, `/System`,
+`/Worksheet Global Default` files, graphs (by design).  Behaviour not yet verified
+against the original is listed in `docs/compat-notes.md`; sources are in
+`docs/SOURCES.md`.
 
 To check the engine against the original program, `make testsheet` writes
 `private-samples/MKTEST.WK1`: open it in 1-2-3, recalculate, and read the
@@ -26,6 +26,7 @@ formula re-encodes byte for byte and recalculates to the stored value, and
 round-trips the file.
 
     make          build to build/mkspread
+    make install  install to /usr/local (PREFIX=, DESTDIR= work); make uninstall
     make demo     run with a sample sheet
     make test     unit tests + end-to-end screen tests
     ./build/mkspread --help

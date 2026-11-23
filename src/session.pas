@@ -127,6 +127,9 @@ type
     WinSync: Boolean;                   { windows scroll together }
     WinOther: TWinState;
     ScreenW, ScreenH: Integer;
+    Modified: Boolean;                  { the worksheet has changes that are not in a file }
+    Changes: Cardinal;                  { counts changes (for the recovery file) }
+    SeenVersion: Cardinal;
     Print: TPrintSettings;               { /Print settings and the output not yet sent }
     FPActive: Boolean;                  { pointing at cells while typing a formula }
     FPStart, FPLen: Integer;            { where the reference text is in the entry }
@@ -177,6 +180,8 @@ type
     procedure EraseLearnRange;
     procedure AskRange(const text: string; cont: TCommandProc; const path: string);
     function Selection: TRange;                 { cells to highlight }
+    procedure CheckModified;                    { notices changes made without SaveUndo }
+    procedure MarkSaved;                        { the worksheet and its file agree }
     procedure SaveUndo;                         { call before changing the worksheet }
     procedure EndChange;                        { the command is done; stop recording }
     procedure DoUndo;
@@ -597,8 +602,26 @@ begin
     Result := NormRange(CurRow, CurCol, CurRow, CurCol);
 end;
 
+procedure TSession.CheckModified;
+begin
+  if Sheet.Version <> SeenVersion then
+  begin
+    SeenVersion := Sheet.Version;
+    Modified := True;
+    Inc(Changes);
+  end;
+end;
+
+procedure TSession.MarkSaved;
+begin
+  Modified := False;
+  SeenVersion := Sheet.Version;
+end;
+
 procedure TSession.SaveUndo;
 begin
+  Modified := True;
+  Inc(Changes);
   UndoSet.Free;                  { single level: the previous change is forgotten }
   UndoSet := Sheet.BeginChange;
   HasUndo := True;

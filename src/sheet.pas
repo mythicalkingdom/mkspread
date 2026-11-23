@@ -121,6 +121,7 @@ type
     RecalcManual: Boolean;        { True: recalculate only on F9 }
     Iterations: Integer;          { recalculation passes, 1..50 }
     Changed: Boolean;             { cell contents changed since the owner last looked }
+    Version: Cardinal;            { counts changes for good (to tell when a file needs saving) }
     PointerRow, PointerCol: Integer;   { where the cell pointer is, for @CELLPOINTER }
     FileName: string;             { for @CELL("filename") }
     { Frozen titles: rows R1..R2 / columns C1..C2 stay on screen; 0 = none. }
@@ -154,6 +155,7 @@ type
     procedure CopyNamesTo(dest: TNameMap);
     procedure UsedExtent(out maxR, maxC: Integer);
     procedure EachCell(visit: TCellVisitor; data: Pointer);
+    procedure MarkChanged;
     function ColWidth(c: Integer): Integer;
     function ColWidthIsSet(c: Integer): Boolean;
     function ColWidthSetting(c: Integer): Integer;   { 0 = following the global width }
@@ -341,7 +343,7 @@ begin
     FCells.Add(Key(r, c), Result);
   end;
   Result.SetRaw(raw);
-  Changed := True;
+  MarkChanged;
 end;
 
 procedure TSheet.Remove(r, c: Integer);
@@ -354,7 +356,7 @@ begin
     Touch(r, c);
     FCells.Remove(Key(r, c));
     cell.Free;
-    Changed := True;
+    MarkChanged;
   end;
 end;
 
@@ -373,7 +375,7 @@ begin
   end;
   for cell in FCells.Values do cell.Free;
   FCells.Clear;
-  Changed := True;
+  MarkChanged;
   FillChar(FColWd, SizeOf(FColWd), 0);
 end;
 
@@ -392,7 +394,7 @@ begin
   RecalcManual := False;
   Iterations := 1;
   TitleR1 := 0; TitleR2 := 0; TitleC1 := 0; TitleC2 := 0;
-  Changed := True;
+  MarkChanged;
 end;
 
 procedure TSheet.SetLabelAlignment(ch: Char; all: Boolean; r1, c1, r2, c2: Integer);
@@ -453,7 +455,7 @@ begin
       FCells.Remove(key);
       cell.Free;
     end;
-    Changed := True;
+    MarkChanged;
     exit;
   end;
   if not FCells.TryGetValue(key, cell) then
@@ -465,7 +467,7 @@ begin
   end;
   cell.SetRaw(st.Raw);
   cell.Fmt := st.Fmt;
-  Changed := True;
+  MarkChanged;
 end;
 
 procedure TSheet.Touch(r, c: Integer);
@@ -518,7 +520,7 @@ begin
   TitleC2 := cs.Globals.TitleC2;
   FNames.Clear;
   for np in cs.Names do FNames.Add(np.Key, np.Value);
-  Changed := True;
+  MarkChanged;
 end;
 
 procedure TSheet.SetCellFormat(r, c: Integer; const fmt: TCellFormat; makeIt: Boolean);
@@ -552,19 +554,19 @@ end;
 procedure TSheet.SetName(const name: string; const r: TRange);
 begin
   FNames.AddOrSetValue(UpperCase(name), r);
-  Changed := True;
+  MarkChanged;
 end;
 
 procedure TSheet.DeleteName(const name: string);
 begin
   FNames.Remove(UpperCase(name));
-  Changed := True;
+  MarkChanged;
 end;
 
 procedure TSheet.ClearNames;
 begin
   FNames.Clear;
-  Changed := True;
+  MarkChanged;
 end;
 
 function TSheet.NameCount: Integer;
@@ -610,7 +612,7 @@ begin
   finally
     keys.Free;
   end;
-  Changed := True;
+  MarkChanged;
 end;
 
 function TSheet.NonEmpty(r, c: Integer): Boolean;
@@ -661,8 +663,15 @@ begin
   Result := FColWd[c];
 end;
 
+procedure TSheet.MarkChanged;
+begin
+  Changed := True;
+  Inc(Version);
+end;
+
 procedure TSheet.SetColWidth(c, w: Integer);
 begin
+  Inc(Version);
   if (Journal <> nil) and not Journal.Widths.ContainsKey(c) then
     Journal.Widths.Add(c, FColWd[c]);
   FColWd[c] := w;

@@ -84,7 +84,7 @@ begin
     'Choose a topic with the arrow keys and press Enter.|Esc leaves help; Backspace goes back to the previous screen.',
     'basics,screen,modes,keys,fkeys,entry,editing,formulas,ranges,functions,menus,' +
     'm:worksheet,m:range,m:copy,m:move,m:file,m:data,m:print,m:graph,m:system,m:quit,' +
-    'filefmt,macros,learn,recalc,dates,undo,errors,about');
+    'filefmt,recovery,macros,learn,recalc,dates,undo,errors,about');
 
   T('basics', 'Getting started',
     'mkspread is a spreadsheet for the terminal.  The worksheet is a grid of cells:|' +
@@ -538,6 +538,18 @@ begin
     'the usual kinds are kept.  Characters are stored in the original character|' +
     'set and shown as UTF-8.',
     'm:file')
+
+  ;
+  T('recovery', 'Recovery and autosave',
+    'While a worksheet has unsaved changes mkspread keeps a copy in|' +
+    '~/.local/state/mkspread/recover.  A normal exit removes it; if the program,|' +
+    'the terminal or the SSH connection dies, the next start asks whether to|' +
+    'Recover it, Discard it or decide Later.|' +
+    'Autosave (off by default) saves a worksheet that has a file name to that file|' +
+    'every N minutes: start with --autosave=N or put autosave = N in|' +
+    '~/.config/mkspread/mkspread.conf.  The same file sets recovery = seconds and|' +
+    'expand = yes.  Save with /File Save as usual; that also settles the copy.',
+    'm:file,filefmt')
 
   ;
   T('macros', 'Macros',

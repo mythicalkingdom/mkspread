@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """End-to-end screen tests: run the real binary in a pty and inspect the screen."""
-import os, sys, time
+import os, sys, time, tempfile, shutil
 sys.path.insert(0, os.path.dirname(__file__))
 from term import Session
 
@@ -16,7 +16,17 @@ def check(cond, what, detail=''):
         print('FAIL:', what, detail)
 
 
+STATE = tempfile.mkdtemp(prefix='mkspread_state_')
+os.environ['XDG_STATE_HOME'] = STATE          # recovery files of the test runs go here
+os.environ['XDG_CONFIG_HOME'] = os.path.join(STATE, 'config')
+
+
+def clean_state():
+    shutil.rmtree(os.path.join(STATE, 'mkspread'), ignore_errors=True)
+
+
 def run(args=(), rows=25, cols=80, cwd=None):
+    clean_state()
     return Session([BIN] + list(args), rows, cols, cwd=cwd)
 
 
@@ -365,6 +375,41 @@ check(s.line(1).startswith('A2:') and s.line(1).endswith('READY'), 'the pointer 
 check(s.line(6).rstrip().endswith('10'), 'the formula was entered (+$A$1*2 = 10)', s.line(6))
 s.send('/qy', 0.4)
 s.close()
+
+# ---- recovery ----
+import signal, glob
+rec = os.path.join(STATE, 'mkspread', 'recover')
+s = run()
+s.send('5\r')
+s.send('\x1b[B')
+s.send('abc\r')
+os.kill(s.pid, signal.SIGHUP)          # the terminal goes away
+s.close()
+check(len(glob.glob(rec + '/*.wk1')) == 1, 'a hangup leaves a recovery file', str(glob.glob(rec + '/*')))
+s = Session([BIN], 25, 80)               # not run(): that would clean the state folder
+check(s.line(2).startswith('Recover'), 'the next start offers the recovery', s.line(2))
+check('Load the unsaved worksheet' in s.line(3), 'with an explanation', s.line(3))
+s.send('\r')
+check(s.line(5).rstrip().endswith('5') and 'abc' in s.line(6), 'the worksheet is recovered', s.line(5) + s.line(6))
+check(not glob.glob(rec + '/*.wk1'), 'the recovery file is gone', str(glob.glob(rec + '/*')))
+s.send('/qy', 0.4)
+s.close()
+check(not glob.glob(rec + '/*'), 'a clean exit leaves nothing', str(glob.glob(rec + '/*')))
+# discard, and the periodic write
+os.makedirs(os.path.join(STATE, 'config', 'mkspread'), exist_ok=True)
+open(os.path.join(STATE, 'config', 'mkspread', 'mkspread.conf'), 'w').write('recovery = 1\n')
+s = run()
+s.send('7\r', 2.5)
+check(len(glob.glob(rec + '/*.wk1')) == 1, 'the recovery file is written while working', str(glob.glob(rec + '/*')))
+os.kill(s.pid, signal.SIGKILL)         # no chance to clean up
+s.close()
+s = Session([BIN], 25, 80)
+check(s.line(2).startswith('Recover'), 'offered after a crash', s.line(2))
+s.send('d')
+check(s.line(5).strip() == '1' and not glob.glob(rec + '/*.wk1'), 'Discard deletes it', s.line(5))
+s.send('/qy', 0.4)
+s.close()
+os.remove(os.path.join(STATE, 'config', 'mkspread', 'mkspread.conf'))
 
 # ---- windows ----
 s = run()
