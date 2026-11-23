@@ -142,7 +142,7 @@ begin
     'fkeys,ranges');
 
   T('fkeys', 'Function keys',
-    'F1  help                        F6  window (not yet available)|' +
+    'F1  help                        F6  switch to the other window|' +
     'F2  edit the current cell       F7  repeat the last Data Query|' +
     'F3  list names or files         F8  repeat the last Data Table|' +
     'F4  absolute / relative cycle   F9  recalculate|' +
@@ -299,7 +299,8 @@ begin
     'Titles     keep rows and/or columns on the screen while scrolling|' +
     'Status     show the settings      Page  insert a page break row|' +
     'Learn      choose where LEARN records keystrokes (see Recording)|' +
-    'Window     split the screen (not yet available)',
+    'Window     split the screen: Horizontal or Vertical at the pointer, Sync or|' +
+    '           Unsync scrolling, Clear; F6 moves to the other window',
     'm:worksheet global,m:range,learn');
 
   T('m:worksheet global', 'Worksheet Global',

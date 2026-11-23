@@ -238,6 +238,16 @@ begin
   S.CurCol := 1; S.CurRow := 1; S.LeftCol := 1; S.TopRow := 1;
 end;
 
+{ /Worksheet Window }
+procedure CmdWindow(S: TSession; const path: string);
+begin
+  if path.EndsWith('Horizontal') then S.WindowSplit(1)
+  else if path.EndsWith('Vertical') then S.WindowSplit(2)
+  else if path.EndsWith('Clear') then S.WindowClear
+  else if S.WinKind = 0 then S.Msg := 'The screen is not split'
+  else S.WinSync := path.EndsWith('Sync') and not path.EndsWith('Unsync');
+end;
+
 procedure RegisterSheetCommands(C: TCommands);
 const
   Kinds: array[0..8] of string =
@@ -265,6 +275,11 @@ begin
     C.Register('Worksheet Global Label-Prefix ' + Aligns[k], @CmdGlobalLabel);
   end;
   C.Register('Worksheet Global Column-Width', @CmdGlobalWidth);
+  C.Register('Worksheet Window Horizontal', @CmdWindow);
+  C.Register('Worksheet Window Vertical', @CmdWindow);
+  C.Register('Worksheet Window Sync', @CmdWindow);
+  C.Register('Worksheet Window Unsync', @CmdWindow);
+  C.Register('Worksheet Window Clear', @CmdWindow);
   C.Register('Worksheet Column Set-Width', @CmdSetWidth);
   C.Register('Worksheet Column Reset-Width', @CmdResetWidth);
   for k := Low(RecalcItems) to High(RecalcItems) do

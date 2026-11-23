@@ -245,7 +245,7 @@ begin
         FS.Mode := mGoto;
         FS.Entry := '';
       end;
-    kF1 + 5: StubKey('F6 (WINDOW)');
+    kF1 + 5: FS.WindowSwitch;
     kF1 + 6: StubKey('F7 (QUERY)');
     kF1 + 7: RunLastTable(FS);
     kF1 + 8: FS.Calc.Recalc;
@@ -1029,6 +1029,7 @@ begin
     FS.ReturnPath := '';
   end;
   if (FS.Mode = mReady) and (FS.Print.Pending <> '') then FlushPrint(FS);
+  FS.SyncWindows;
   FS.EndChange;
 end;
 

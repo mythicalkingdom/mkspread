@@ -3037,6 +3037,73 @@ begin
   CheckStr(RawAt(S, 2, 1), '''hello', 'and moves the data down');
 end;
 
+procedure TestWindows;
+var
+  S: TSession;
+  Cmds: TCommands;
+  Ctl: TController;
+  q: TKeyQueue;
+  i: Integer;
+
+  procedure Go(const keys: string);
+  begin
+    q.PushString(keys);
+    while not q.Empty do Ctl.HandleKey(q.Pop);
+  end;
+
+begin
+  S := TSession.Create;
+  Cmds := TCommands.Create;
+  RegisterCoreCommands(Cmds);
+  Ctl := TController.Create(S, Cmds);
+  q := TKeyQueue.Create;
+  Ctl.HandleKey(kF1 + 5);
+  CheckStr(S.Msg, 'There is only one window', 'F6 without a split');
+  for i := 1 to 9 do Ctl.HandleKey(kDown);
+  CheckInt(S.CurRow, 10, 'pointer on row 10');
+  Go('/wwh');
+  CheckInt(S.WinKind, 1, 'horizontal split');
+  CheckInt(S.WinSize, 9, 'the top window has the rows above the pointer');
+  CheckInt(S.WinActive, 1, 'the pointer is in the lower window');
+  CheckInt(S.TopRow, 10, 'the lower window starts at the pointer row');
+  CheckInt(S.GridRows, 10, 'the lower window has the rest of the rows');
+  CheckInt(S.WinOther.Top, 1, 'the upper window shows row 1 first');
+  Ctl.HandleKey(kDown);
+  CheckInt(S.CurRow, 11, 'the pointer moves in the lower window');
+  Ctl.HandleKey(kF1 + 5);
+  CheckInt(S.WinActive, 0, 'F6 goes to the other window');
+  CheckInt(S.CurRow, 9, 'the upper window has its own pointer');
+  CheckInt(S.GridRows, 9, 'and its own size');
+  Ctl.HandleKey(kF1 + 5);
+  CheckInt(S.CurRow, 11, 'F6 again returns to where the pointer was');
+  { sync: the windows scroll sideways together }
+  for i := 1 to 12 do Ctl.HandleKey(kRight);
+  Check(S.LeftCol > 1, 'the lower window scrolled sideways');
+  CheckInt(S.WinOther.Left, S.LeftCol, 'the upper window followed (Sync)');
+  Go('/wwu');
+  Check(not S.WinSync, 'Unsync');
+  for i := 1 to 6 do Ctl.HandleKey(kRight);
+  Check(S.WinOther.Left < S.LeftCol, 'no longer following');
+  Go('/wws');
+  Check(S.WinSync, 'Sync');
+  Go('/wwc');
+  CheckInt(S.WinKind, 0, 'Clear');
+  CheckInt(S.GridRows, 20, 'one window again');
+  { vertical split }
+  S.CurRow := 1; S.TopRow := 1; S.CurCol := 3; S.LeftCol := 1;
+  S.Normalize;
+  Go('/wwv');
+  CheckInt(S.WinKind, 2, 'vertical split');
+  CheckInt(S.WinSize, 4 + 18, 'the left window holds the columns before the pointer');
+  CheckInt(S.LeftCol, 3, 'the right window starts at the pointer column');
+  CheckInt(S.GridW, 80 - 22 - 1 - 4, 'and takes the rest of the width');
+  for i := 1 to 30 do Ctl.HandleKey(kDown);
+  Check(S.TopRow > 1, 'scrolled down');
+  CheckInt(S.WinOther.Top, S.TopRow, 'the left window followed (Sync)');
+  Go('/wwc');
+  CheckInt(S.WinKind, 0, 'Clear after a vertical split');
+end;
+
 procedure TestRefEdit;
 var
   s: string;
@@ -3163,6 +3230,7 @@ begin
   TestHelp;
   TestRefEdit;
   TestPrint;
+  TestWindows;
   WriteLn(Total - Fails, '/', Total, ' checks passed');
   if Fails > 0 then Halt(1);
 end.

@@ -26,6 +26,10 @@ uses Classes, sheet, menutree, calc, printing;
 type
   TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint, mNames, mFind, mHelp);
 
+  TWinState = record                    { the window that does not have the pointer }
+    Row, Col, Left, Top: Integer;
+  end;
+
   TSession = class;
   { A command, or the continuation of a command that asked a question.
     path is the menu path that started it, e.g. 'Range Format Fixed'. }
@@ -117,6 +121,12 @@ type
     Anchored, Typing: Boolean;
     AnchorR, AnchorC: Integer;
     OrigRow, OrigCol, OrigTop, OrigLeft: Integer;
+    WinKind: Integer;                   { 0 one window, 1 split horizontally (top/bottom), 2 vertically }
+    WinSize: Integer;                   { rows of the top window / width of the left one }
+    WinActive: Integer;                 { 0 = top or left window, 1 = bottom or right }
+    WinSync: Boolean;                   { windows scroll together }
+    WinOther: TWinState;
+    ScreenW, ScreenH: Integer;
     Print: TPrintSettings;               { /Print settings and the output not yet sent }
     FPActive: Boolean;                  { pointing at cells while typing a formula }
     FPStart, FPLen: Integer;            { where the reference text is in the entry }
@@ -144,6 +154,12 @@ type
     function ScrollW: Integer;          { columns' width available to scrolling }
     function RightColOf(left: Integer): Integer;
     procedure Normalize;
+    procedure WinRect(idx: Integer; out x0, y0, rows, wtot: Integer);
+    procedure ApplyGeometry;            { GridW and GridRows of the window with the pointer }
+    procedure WindowSplit(kind: Integer);
+    procedure WindowClear;
+    procedure WindowSwitch;             { F6 }
+    procedure SyncWindows;
     procedure OpenMenu;
     function MenuPath(upTo: Integer): string;   { "Worksheet Global Format" }
 
@@ -182,6 +198,8 @@ begin
   ChoiceHelp := TStringList.Create;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
   ResetPrint(Print);
+  ScreenW := 80;
+  ScreenH := 25;
   Print.Pos := 0;
   Print.PageNo := 1;
   Data.FillStart := 0; Data.FillStep := 1; Data.FillStop := 8191;
@@ -280,6 +298,105 @@ begin
   end;
   if TopRow > MaxRow - ScrollRows + 1 then TopRow := MaxRow - ScrollRows + 1;
   if TopRow < minTop then TopRow := minTop;
+end;
+
+{ ---------------------------------------------------------------- windows }
+
+{ where window idx is on the screen: x0 its first column, y0 the line of its column
+  letters, rows its number of data rows, wtot its width (with the row numbers) }
+procedure TSession.WinRect(idx: Integer; out x0, y0, rows, wtot: Integer);
+begin
+  x0 := 1;
+  y0 := 4;
+  rows := ScreenH - 5;
+  wtot := ScreenW;
+  case WinKind of
+    1: if idx = 0 then rows := WinSize
+       else begin y0 := 5 + WinSize; rows := ScreenH - 6 - WinSize; end;
+    2: if idx = 0 then wtot := WinSize
+       else begin x0 := WinSize + 2; wtot := ScreenW - WinSize - 1; end;
+  end;
+  if rows < 1 then rows := 1;
+end;
+
+procedure TSession.ApplyGeometry;
+var
+  x0, y0, rows, wtot: Integer;
+begin
+  WinRect(WinActive, x0, y0, rows, wtot);
+  GridRows := rows;
+  GridW := wtot - 4;
+end;
+
+procedure TSession.WindowClear;
+begin
+  WinKind := 0;
+  WinActive := 0;
+  ApplyGeometry;
+  Normalize;
+end;
+
+procedure TSession.WindowSplit(kind: Integer);
+var
+  i, rows, w: Integer;
+begin
+  if WinKind <> 0 then WindowClear;
+  if kind = 1 then
+  begin
+    rows := ScreenH - 5;
+    WinSize := CurRow - TopRow;
+    if WinSize < 1 then WinSize := 1;
+    if WinSize > rows - 3 then WinSize := rows - 3;
+    WinOther.Row := CurRow - 1;
+    if WinOther.Row < TopRow then WinOther.Row := TopRow;
+    WinOther.Col := CurCol;
+    WinOther.Left := LeftCol;
+    WinOther.Top := TopRow;
+    TopRow := CurRow;                  { the lower window starts at the pointer's row }
+  end
+  else
+  begin
+    w := 4;
+    for i := LeftCol to CurCol - 1 do Inc(w, Sheet.ColWidth(i));
+    if CurCol = LeftCol then w := 4 + Sheet.ColWidth(LeftCol);
+    if w > ScreenW - 12 then w := ScreenW - 12;
+    if w < 8 then w := 8;
+    WinSize := w;
+    WinOther.Row := CurRow;
+    WinOther.Col := CurCol - 1;
+    if WinOther.Col < LeftCol then WinOther.Col := LeftCol;
+    WinOther.Left := LeftCol;
+    WinOther.Top := TopRow;
+    LeftCol := CurCol;                 { the right window starts at the pointer's column }
+  end;
+  WinKind := kind;
+  WinActive := 1;
+  WinSync := True;
+  ApplyGeometry;
+  Normalize;
+end;
+
+procedure TSession.WindowSwitch;
+var
+  t: TWinState;
+begin
+  if WinKind = 0 then
+  begin
+    Msg := 'There is only one window';
+    exit;
+  end;
+  t.Row := CurRow; t.Col := CurCol; t.Left := LeftCol; t.Top := TopRow;
+  CurRow := WinOther.Row; CurCol := WinOther.Col; LeftCol := WinOther.Left; TopRow := WinOther.Top;
+  WinOther := t;
+  WinActive := 1 - WinActive;
+  ApplyGeometry;
+  Normalize;
+end;
+
+procedure TSession.SyncWindows;
+begin
+  if (WinKind = 0) or not WinSync then exit;
+  if WinKind = 1 then WinOther.Left := LeftCol else WinOther.Top := TopRow;
 end;
 
 procedure TSession.OpenMenu;

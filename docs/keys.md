@@ -35,6 +35,7 @@ after Esc is Alt-letter.  On very slow links, type Esc then wait briefly.
 | F3 | POINT mode, name prompts | list range names; Left/Right choose, Enter accepts |
 | Alt-F2 | STEP mode on/off (macros run one key at a time) | |
 | Alt-F5 | LEARN mode on/off (record keystrokes into the learn range) | |
+| F6 | switch to the other window (after /Worksheet Window) | |
 | F8 | re-run the last /Data Table | |
 | F4 | cycle the reference at the cursor: A1, $A$1, A$1, $A1 | while typing a formula, in EDIT mode, or in a typed address |
 | arrows | while typing a formula right after an operator, `(` or `,` | POINT: the cell address is entered for you; `.` anchors a range |

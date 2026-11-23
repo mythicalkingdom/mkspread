@@ -53,7 +53,7 @@ end;
 type
   TIntArray = array of Integer;
 
-procedure DrawRow(S: TSession; r, y: Integer; const cols: TIntArray; gridW: Integer);
+procedure DrawRow(S: TSession; r, y: Integer; const cols: TIntArray; gridW, x0: Integer; active: Boolean);
 var
   buf, t: UnicodeString;
   ci, cj, c, x, w, k, av, hx, hw: Integer;
@@ -77,7 +77,7 @@ begin
   hx := 0;
   hw := 0;
   x := 1;
-  sel := S.Selection;
+  if active then sel := S.Selection else sel := NormRange(0, 0, 0, 0);
   for ci := 0 to High(cols) do
   begin
     c := cols[ci];
@@ -137,9 +137,69 @@ begin
     end;
     Inc(x, w);
   end;
-  TermPut(BorderW + 1, y, taNormal, UTF8Encode(buf));
+  TermPut(x0 + BorderW, y, taNormal, UTF8Encode(buf));
   if hw > 0 then
-    TermPut(BorderW + hx, y, taHi, UTF8Encode(Copy(buf, hx, hw)));
+    TermPut(x0 + BorderW - 1 + hx, y, taHi, UTF8Encode(Copy(buf, hx, hw)));
+end;
+
+{ one window of the worksheet: its column letters, row numbers and cells }
+procedure DrawWindow(S: TSession; idx, left, top: Integer; active: Boolean);
+var
+  x0, y0, nrows, wtot, gridW, tw, c, r, x, i, n, line, used: Integer;
+  cols, rowsList: TIntArray;
+begin
+  S.WinRect(idx, x0, y0, nrows, wtot);
+  gridW := wtot - BorderW;
+  SetLength(cols, 0);
+  tw := 0;
+  if S.HasTitleCols then
+    for c := S.Sheet.TitleC1 to S.Sheet.TitleC2 do
+    begin
+      SetLength(cols, Length(cols) + 1);
+      cols[High(cols)] := c;
+      Inc(tw, S.Sheet.ColWidth(c));
+    end;
+  used := 0;
+  c := left;
+  while c <= MaxCol do
+  begin
+    if (used > 0) and (used + S.Sheet.ColWidth(c) > gridW - tw) then break;
+    SetLength(cols, Length(cols) + 1);
+    cols[High(cols)] := c;
+    Inc(used, S.Sheet.ColWidth(c));
+    Inc(c);
+  end;
+  SetLength(rowsList, 0);
+  if S.HasTitleRows then
+    for r := S.Sheet.TitleR1 to S.Sheet.TitleR2 do
+    begin
+      SetLength(rowsList, Length(rowsList) + 1);
+      rowsList[High(rowsList)] := r;
+    end;
+  n := Length(rowsList);
+  for r := top to top + (nrows - n) - 1 do
+  begin
+    SetLength(rowsList, Length(rowsList) + 1);
+    rowsList[High(rowsList)] := r;
+  end;
+  { column letters }
+  TermPut(x0, y0, taHi, StringOfChar(' ', wtot));
+  x := x0 + BorderW;
+  for i := 0 to High(cols) do
+  begin
+    c := S.Sheet.ColWidth(cols[i]);
+    if x + c - 1 > x0 + wtot - 1 then break;
+    TermPut(x + (c - Length(ColLetter(cols[i]))) div 2, y0, taHi, ColLetter(cols[i]));
+    Inc(x, c);
+  end;
+  { rows }
+  for line := 0 to High(rowsList) do
+  begin
+    r := rowsList[line];
+    if r > MaxRow then break;
+    TermPut(x0, y0 + 1 + line, taHi, PadR(IntToStr(r), BorderW));
+    DrawRow(S, r, y0 + 1 + line, cols, gridW, x0, active);
+  end;
 end;
 
 procedure DrawMenu(S: TSession);
@@ -269,40 +329,10 @@ begin
     TermRefresh;
     exit;
   end;
-  gridW := w - BorderW;
-  gridRows := h - 5;
-  S.GridW := gridW;
-  S.GridRows := gridRows;
+  S.ScreenW := w;
+  S.ScreenH := h;
+  S.ApplyGeometry;
   S.Normalize;
-  rc := S.RightColOf(S.LeftCol);
-
-  { visible columns: frozen title columns, then the scrolling ones }
-  SetLength(cols, 0);
-  if S.HasTitleCols then
-    for c := S.Sheet.TitleC1 to S.Sheet.TitleC2 do
-    begin
-      SetLength(cols, Length(cols) + 1);
-      cols[High(cols)] := c;
-    end;
-  for c := S.LeftCol to rc do
-  begin
-    SetLength(cols, Length(cols) + 1);
-    cols[High(cols)] := c;
-  end;
-  { visible rows likewise }
-  SetLength(rowsList, 0);
-  if S.HasTitleRows then
-    for r := S.Sheet.TitleR1 to S.Sheet.TitleR2 do
-    begin
-      SetLength(rowsList, Length(rowsList) + 1);
-      rowsList[High(rowsList)] := r;
-    end;
-  n := Length(rowsList);
-  for r := S.TopRow to S.TopRow + (gridRows - n) - 1 do
-  begin
-    SetLength(rowsList, Length(rowsList) + 1);
-    rowsList[High(rowsList)] := r;
-  end;
 
   { line 1: cell status and mode indicator }
   st := ColLetter(S.CurCol) + IntToStr(S.CurRow) + ':';
@@ -405,22 +435,23 @@ begin
       end;
   end;
 
-  { line 4: column letters }
-  TermPut(1, 4, taHi, StringOfChar(' ', w));
-  x := BorderW + 1;
-  for i := 0 to High(cols) do
+  { the windows }
+  if S.WinKind = 0 then
+    DrawWindow(S, 0, S.LeftCol, S.TopRow, True)
+  else
   begin
-    c := S.Sheet.ColWidth(cols[i]);
-    TermPut(x + (c - Length(ColLetter(cols[i]))) div 2, 4, taHi, ColLetter(cols[i]));
-    Inc(x, c);
-  end;
-
-  { rows }
-  for line := 0 to High(rowsList) do
-  begin
-    r := rowsList[line];
-    TermPut(1, 5 + line, taHi, PadR(IntToStr(r), BorderW));
-    DrawRow(S, r, 5 + line, cols, gridW);
+    if S.WinActive = 0 then
+    begin
+      DrawWindow(S, 0, S.LeftCol, S.TopRow, True);
+      DrawWindow(S, 1, S.WinOther.Left, S.WinOther.Top, False);
+    end
+    else
+    begin
+      DrawWindow(S, 0, S.WinOther.Left, S.WinOther.Top, False);
+      DrawWindow(S, 1, S.LeftCol, S.TopRow, True);
+    end;
+    if S.WinKind = 2 then
+      for line := 4 to h - 1 do TermPut(S.WinSize + 1, line, taHi, ' ');
   end;
 
   { bottom line: clock, message, indicators }

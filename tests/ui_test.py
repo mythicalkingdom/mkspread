@@ -366,6 +366,18 @@ check(s.line(6).rstrip().endswith('10'), 'the formula was entered (+$A$1*2 = 10)
 s.send('/qy', 0.4)
 s.close()
 
+# ---- windows ----
+s = run()
+s.send('\x1b[B' * 9, 0.2)
+s.send('/wwh', 0.4)
+check(s.line(1).startswith('A10:'), 'the pointer stays on its cell after a split', s.line(1))
+s.send('\x1b[17~', 0.3)
+check(s.line(1).startswith('A9:'), 'F6 moves to the upper window', s.line(1))
+s.send('/wwc', 0.3)
+check(s.line(1).startswith('A9:'), 'Clear keeps the pointer', s.line(1))
+s.send('/qy', 0.4)
+s.close()
+
 # ---- print menu ----
 s = run()
 s.send('/pp', 0.3)
