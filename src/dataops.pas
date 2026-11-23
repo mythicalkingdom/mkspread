@@ -415,7 +415,7 @@ begin
   end;
   if toR + 8 > MaxRow then exit('The report does not fit below the output cell');
   if toC + 2 + k > MaxCol then exit('The report does not fit to the right of the output cell');
-  sh.Put(toR, toC, '''Regression Output:');
+  sh.Put(toR, toC + 1, '''Regression Output:');
   sh.Put(toR + 1, toC, '''Constant');
   if zeroIntercept then sh.Put(toR + 1, toC + 3, '0') else sh.Put(toR + 1, toC + 3, NumToRaw(beta[0]));
   sh.Put(toR + 2, toC, '''Std Err of Y Est');

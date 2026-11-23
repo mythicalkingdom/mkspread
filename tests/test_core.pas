@@ -2046,7 +2046,7 @@ begin
   CheckNear(S, 13, 4, 3, 'degrees of freedom');
   CheckNear(S, 15, 3, 0.75, 'coefficient');
   CheckNear(S, 16, 3, 0.03, 'standard error of the coefficient');
-  CheckStr(RawAt(S, 8, 1), '''Regression Output:', 'report heading');
+  CheckStr(RawAt(S, 8, 2), '''Regression Output:', 'report heading');
   CheckStr(RawAt(S, 15, 1), '''X Coefficient(s)', 'coefficient label');
   S.Sheet.Clear;
   { two variables, exact fit: y = 1 + 2 x1 + 3 x2 }

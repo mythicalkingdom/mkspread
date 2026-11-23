@@ -43,7 +43,7 @@
   the table range, then the input cell(s); F8 repeats it.
 - **Regression output** (at the output cell): `Regression Output:`, `Constant`,
   `Std Err of Y Est`, `R Squared`, `No. of Observations`, `Degrees of Freedom`
-  (labels in the first column, values three columns right), then `X Coefficient(s)`
+  (labels in the first column, values three columns right; the heading is one column right of the output cell and coefficients start two columns right), then `X Coefficient(s)`
   and `Std Err of Coef.` with one value per X column.  If Y is a single row the
   observations are taken along rows.
 - **Parse:** a format line is a label starting with `|` whose characters line
