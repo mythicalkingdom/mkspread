@@ -52,6 +52,8 @@ type
   public
     constructor Create(S: TSession; Cmds: TCommands);
     procedure HandleKey(k: Integer);
+    { a key typed by the user: recorded in LEARN mode, then handled }
+    procedure HandleUserKey(k: Integer);
   end;
 
 implementation
@@ -239,7 +241,6 @@ begin
     kF1 + 8: FS.Calc.Recalc;
     kF1 + 9: StubKey('F10 (GRAPH)');
     kAltF1: StubKey('Alt-F1 (COMPOSE)');
-    kAltF1 + 1: StubKey('Alt-F2 (STEP)');
     kAltF1 + 2:
       if FS.OpenNameList then FS.ChoiceCont := @RunNameChosen;     { Alt-F3: run a macro }
     kAltF1 + 3: FS.DoUndo;
@@ -654,9 +655,18 @@ begin
   end;
 end;
 
+procedure TController.HandleUserKey(k: Integer);
+begin
+  if k <> kNone then FS.LearnKey(k);
+  HandleKey(k);
+end;
+
 procedure TController.HandleKey(k: Integer);
 begin
   if k = kNone then exit;
+  { STEP (Alt-F2) and LEARN (Alt-F5) switch on and off whatever the mode }
+  if k = kAltF1 + 1 then begin FS.StepOn := not FS.StepOn; exit; end;
+  if k = kAltF1 + 4 then begin FS.Msg := ''; FS.ToggleLearn; exit; end;
   FS.Msg := '';
   FEnd := FS.EndMode;
   if k <> kEnd then FS.EndMode := False;

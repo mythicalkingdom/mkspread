@@ -1793,6 +1793,88 @@ begin
   Check(MM.UserKey(kBreak) or True, 'break key handled');
   Check(not MM.Active, 'Ctrl-Break stops a macro');
 
+
+  { ---- macro recording (Learn) and STEP mode ---- }
+  NewMacroSession;
+  MC.HandleUserKey(kAltF1 + 4);
+  CheckStr(MS.Msg, 'Set a learn range first (/Worksheet Learn Range)', 'Alt-F5 needs a learn range');
+  Check(not MS.LearnOn, 'so learn mode stays off');
+  UserTypes('/wlr');
+  Check(MS.Mode = mPoint, '/Worksheet Learn Range asks for a range');
+  UserTypes('k1.k3' + #13);
+  Check(MS.LearnSet and (MS.LearnRange.R1 = 1) and (MS.LearnRange.R2 = 3) and (MS.LearnRange.C1 = 11), 'learn range set');
+  MC.HandleUserKey(kAltF1 + 4);
+  Check(MS.LearnOn, 'Alt-F5 starts recording');
+  MC.HandleUserKey(Ord('h'));
+  MC.HandleUserKey(Ord('i'));
+  MC.HandleUserKey(kEnter);
+  MC.HandleUserKey(kDown);
+  MC.HandleUserKey(Ord('{'));
+  MC.HandleUserKey(Ord('~'));
+  MC.HandleUserKey(kEnter);
+  MC.HandleUserKey(kF1 + 1);
+  MC.HandleUserKey(kEsc);
+  MC.HandleUserKey(kAltF1 + 4);
+  Check(not MS.LearnOn, 'Alt-F5 stops recording');
+  CheckStr(RawAt(MS, 1, 11), '''hi~{DOWN}{{}{~}~{EDIT}{ESC}', 'keys recorded as macro text');
+  CheckStr(RawAt(MS, 1, 1), '''hi', 'and they also did what they normally do');
+  { replay what was recorded }
+  MS.Sheet.Remove(1, 1);
+  MS.Sheet.Remove(2, 1);
+  MS.CurRow := 1; MS.CurCol := 1;
+  MS.Sheet.SetName('\R', NormRange(1, 11, 1, 11));
+  MS.MacroRequest := '\R';
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 1, 1), '''hi', 'replaying the recording types the same');
+  CheckStr(RawAt(MS, 2, 1), '''{~', 'including escaped braces and tilde');
+  { recording again continues after what is there; a long recording wraps }
+  MC.HandleUserKey(kAltF1 + 4);
+  for i := 1 to 130 do MC.HandleUserKey(Ord('a'));
+  MC.HandleUserKey(kAltF1 + 4);
+  Check(not MS.LearnOn, 'Alt-F5 works in the middle of an entry too');
+  MC.HandleKey(kEsc);
+  Check(MS.Sheet.NonEmpty(2, 11), 'recording continued in the next empty cell');
+  CheckInt(Length(RawAt(MS, 2, 11)) - 1, 100, 'a recorded line is cut at 100 characters');
+  Check(MS.Sheet.NonEmpty(3, 11), 'and the rest goes in the next cell');
+  UserTypes('/wle');
+  Check(not MS.Sheet.NonEmpty(1, 11), '/Worksheet Learn Erase empties the range');
+  UserTypes('/wlc');
+  Check(not MS.LearnSet, '/Worksheet Learn Cancel forgets it');
+
+  NewMacroSession;
+  Mac(1, '5~');
+  NameMac('\A', 1);
+  MC.HandleKey(kAltF1 + 1);
+  Check(MS.StepOn, 'Alt-F2 turns STEP mode on');
+  RunMac('\A');
+  Check(MM.Active and not MM.Running, 'in STEP mode the macro waits before its first key');
+  Check(MS.Sheet.Find(1, 1) = nil, 'nothing typed yet');
+  CheckStr(MS.StepInfo, 'K1: >5~', 'the current line is shown with the position marked');
+  Check(MM.UserKey(kRight), 'any key steps and is not typed');
+  MM.RunSync(MC);
+  CheckStr(MS.Entry, '5', 'one key was typed');
+  Check(MS.Mode = mValue, 'and the macro waits again');
+  CheckStr(MS.StepInfo, 'K1: 5>~', 'at the next key');
+  MM.UserKey(kRight);
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 1, 1), '5', 'the second step pressed Enter');
+  MM.UserKey(kRight);
+  MM.RunSync(MC);
+  Check(not MM.Active, 'the macro ends at the empty cell');
+
+  NewMacroSession;
+  Mac(1, '{DOWN 2}7~');
+  NameMac('\A', 1);
+  MS.StepOn := True;
+  RunMac('\A');
+  MM.UserKey(kRight);
+  MM.RunSync(MC);
+  CheckInt(MS.CurRow, 2, 'a repeat count is stepped key by key');
+  MM.UserKey(kAltF1 + 1);
+  Check(not MS.StepOn, 'Alt-F2 during STEP switches it off');
+  MM.RunSync(MC);
+  CheckStr(RawAt(MS, 3, 1), '7', 'and the macro runs to the end');
+
   { \0 runs when a file is retrieved }
   dir := TmpDir;
   old := GetCurrentDir;
@@ -1849,7 +1931,7 @@ begin
   CheckStr(t.Root.KidsText,
     'Worksheet, Range, Copy, Move, File, Print, Graph, Data, System, Quit', 'main menu order');
   CheckStr(t.Root[0].PanelText,
-    'Global, Insert, Delete, Column, Erase, Titles, Window, Status, Page', 'worksheet panel text');
+    'Global, Insert, Delete, Column, Erase, Titles, Window, Status, Page, Learn', 'worksheet panel text');
   CheckStr(t.Root[9][1].PanelText,
     'End the session (Answer Yes only if you have saved your work)', 'quit yes help');
   CheckInt(t.Root.FindByInitial('r'), 1, 'initial R finds Range');

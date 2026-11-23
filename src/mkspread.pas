@@ -107,7 +107,7 @@ begin
           if Queue.Empty then
             Queue.Push(TermReadKey(-1));
           k := Queue.Pop;
-          if not (M.Active and M.UserKey(k)) then Ctl.HandleKey(k);
+          if not (M.Active and M.UserKey(k)) then Ctl.HandleUserKey(k);
         end;
         if S.MacroRequest <> '' then M.TakeRequest;
       until S.Quitting;

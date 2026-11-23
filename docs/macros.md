@@ -39,7 +39,19 @@ tilde.  `{?}` pauses until the user presses Enter.
 | `{INDICATE text}` | replace the mode indicator |
 | `{BEEP}` `{WAIT}` `{PANELOFF}` `{PANELON}` `{WINDOWSOFF}` `{WINDOWSON}` `{BREAKOFF}` `{BREAKON}` `{ONERROR}` | accepted, no effect |
 
+## Recording (LEARN) and STEP
+- **`/Worksheet Learn Range`** sets the range where keystrokes are recorded;
+  `Cancel` forgets it, `Erase` empties it.
+- **Alt-F5** turns recording on and off (`LEARN` at the bottom).  Every key you
+  type is written into the learn range as macro text (`~` for Enter, `{DOWN}`,
+  `{{}` for a brace ...), starting at the first empty cell, down the column and
+  then across; a line is cut at 100 characters.  Name the first cell `\A` and
+  the recording is a macro.
+- **Alt-F2** turns STEP mode on and off (`STEP` at the bottom).  While it is on a
+  macro waits before every key and command and shows its current line with `>`
+  at the position; any key steps (the key itself is not typed).  Alt-F2 during a
+  step switches STEP off and the macro runs on.
+
 Not implemented: the file commands (`{OPEN}`, `{READ}`, `{WRITE}` ...),
-`{SYSTEM}`, `{DISPATCH}`, `{GETPOS}`/`{SETPOS}`, `{FILESIZE}`, macro recording
-and STEP mode.  An unknown command ends the macro with a message.
+`{SYSTEM}`, `{DISPATCH}`, `{GETPOS}`/`{SETPOS}`, `{FILESIZE}`.  An unknown command ends the macro with a message.
 A macro that branches in a loop without typing anything is stopped.

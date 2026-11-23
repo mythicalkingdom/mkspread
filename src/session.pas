@@ -77,6 +77,12 @@ type
     MacroRequest: string;               { name of a macro to start (set by Alt-key, Alt-F3, autoexec) }
     MacroActive: Boolean;               { a macro is running or paused }
     IndicatorText: string;              { replaces the mode indicator (macro {INDICATE}) }
+    StepOn: Boolean;                    { STEP mode: a macro runs one key at a time }
+    StepInfo: string;                   { the macro line being stepped, shown at the bottom }
+    LearnSet, LearnOn: Boolean;         { a learn range is defined / keystrokes are being recorded }
+    LearnRange: TRange;
+    LearnRow, LearnCol: Integer;        { the cell being filled }
+    LearnLine: string;                  { its text so far }
     ChoiceHelp: TStringList;            { a help line per choice, shown on line 3 }
 
     { range selection (POINT mode) }
@@ -117,6 +123,10 @@ type
     procedure AskChoice(const items: array of string; cont: TCommandProc; const path: string);
     procedure ShowChoices(items: TStrings; returnTo: TMode);
     procedure ForgetUndo;
+    { macro recording (Learn): Alt-F5 turns it on and off }
+    procedure ToggleLearn;
+    procedure LearnKey(k: Integer);
+    procedure EraseLearnRange;
     procedure AskRange(const text: string; cont: TCommandProc; const path: string);
     function Selection: TRange;                 { cells to highlight }
     procedure SaveUndo;                         { call before changing the worksheet }
@@ -126,7 +136,7 @@ type
 
 implementation
 
-uses menudata, u8edit, SysUtils;
+uses menudata, u8edit, keys, SysUtils;
 
 constructor TSession.Create;
 begin
@@ -327,6 +337,77 @@ begin
   ChoiceCont := nil;
   ChoiceHelp.Clear;
   Mode := mNames;
+end;
+
+procedure TSession.ToggleLearn;
+var
+  r, c: Integer;
+begin
+  if LearnOn then
+  begin
+    LearnOn := False;
+    exit;
+  end;
+  if not LearnSet then
+  begin
+    Msg := 'Set a learn range first (/Worksheet Learn Range)';
+    exit;
+  end;
+  { continue after what is already recorded: the first empty cell, down then across }
+  for c := LearnRange.C1 to LearnRange.C2 do
+    for r := LearnRange.R1 to LearnRange.R2 do
+      if not Sheet.NonEmpty(r, c) then
+      begin
+        LearnRow := r;
+        LearnCol := c;
+        LearnLine := '';
+        LearnOn := True;
+        exit;
+      end;
+  Msg := 'The learn range is full';
+end;
+
+procedure TSession.LearnKey(k: Integer);
+const
+  MaxLine = 100;
+var
+  t: string;
+begin
+  if not LearnOn then exit;
+  t := KeyMacroText(k);
+  if t = '' then exit;
+  if (LearnLine <> '') and (Length(LearnLine) + Length(t) > MaxLine) then
+  begin
+    { start the next cell }
+    Inc(LearnRow);
+    LearnLine := '';
+    if LearnRow > LearnRange.R2 then
+    begin
+      LearnRow := LearnRange.R1;
+      Inc(LearnCol);
+    end;
+    if LearnCol > LearnRange.C2 then
+    begin
+      LearnOn := False;
+      Msg := 'The learn range is full';
+      exit;
+    end;
+  end;
+  LearnLine := LearnLine + t;
+  Sheet.Put(LearnRow, LearnCol, '''' + LearnLine);
+end;
+
+procedure TSession.EraseLearnRange;
+var
+  r, c: Integer;
+begin
+  if not LearnSet then exit;
+  for r := LearnRange.R1 to LearnRange.R2 do
+    for c := LearnRange.C1 to LearnRange.C2 do
+      Sheet.Remove(r, c);
+  LearnRow := LearnRange.R1;
+  LearnCol := LearnRange.C1;
+  LearnLine := '';
 end;
 
 procedure TSession.ForgetUndo;

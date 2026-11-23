@@ -33,3 +33,5 @@ after Esc is Alt-letter.  On very slow links, type Esc then wait briefly.
 | letters/digits | POINT | type a range such as `A1..C5` instead of pointing |
 | Left, Right | column-width prompt | change the width and preview it |
 | F3 | POINT mode, name prompts | list range names; Left/Right choose, Enter accepts |
+| Alt-F2 | STEP mode on/off (macros run one key at a time) | |
+| Alt-F5 | LEARN mode on/off (record keystrokes into the learn range) | |

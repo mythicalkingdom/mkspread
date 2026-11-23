@@ -331,7 +331,10 @@ begin
 
   { bottom line: clock, message, indicators }
   TermPut(1, h, taNormal, UpperCase(FormatDateTime('dd-mmm-yy hh:nn AM/PM', Now)));
-  if S.Msg <> '' then TermPut(23, h, taMsg, PadR(S.Msg, 55));
+  if S.Msg <> '' then TermPut(23, h, taMsg, PadR(S.Msg, 55))
+  else if S.StepInfo <> '' then TermPut(20, h, taMsg, PadR(S.StepInfo, 40));
+  if S.LearnOn then TermPut(w - 44, h, taNormal, 'LEARN');
+  if S.StepOn then TermPut(w - 38, h, taNormal, 'STEP');
   if S.MacroActive then TermPut(w - 32, h, taNormal, 'CMD');
   if S.Calc.NeedsCalc then TermPut(w - 20, h, taNormal, 'CALC');
   if S.Calc.Circular then TermPut(w - 26, h, taNormal, 'CIRC');

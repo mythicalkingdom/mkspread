@@ -57,7 +57,7 @@ check(s.screen.cyan(7)[5:28] == '#' * 23 and s.screen.cyan(7)[28] == '.', 'cell 
 s.send('/')
 check(s.line(1).endswith('MENU'), 'MENU indicator', s.line(1))
 check(s.line(2).startswith('Worksheet  Range  Copy  Move  File  Print  Graph  Data  System  Quit'), 'menu bar', s.line(2))
-check(s.line(3) == 'Global, Insert, Delete, Column, Erase, Titles, Window, Status, Page', 'submenu list', s.line(3))
+check(s.line(3) == 'Global, Insert, Delete, Column, Erase, Titles, Window, Status, Page, Learn', 'submenu list', s.line(3))
 check(s.screen.cyan(1)[:9] == '#########' and s.screen.cyan(1)[9] == '.', 'first item highlighted')
 s.send('\x1b[C')  # right arrow
 check(s.line(3).startswith('Format, Label, Erase, Name'), 'right arrow moves to Range', s.line(3))
@@ -270,6 +270,22 @@ check('CMD' in s.line(25), 'CMD indicator while a macro waits', s.line(25))
 s.send('ab\r')
 check(s.line(7).rstrip().endswith('there') or 'there' in s.line(8), 'macro continued after the user pressed Enter', s.line(7) + s.line(8))
 check('CMD' not in s.line(25), 'CMD indicator gone when the macro ends', s.line(25))
+s.send('/qy', 0.4)
+s.close()
+
+# ---- learn and step indicators ----
+s = run()
+s.send('/wlr')
+s.send('k1.k5\r')
+s.send('\x1b[15;3~')              # Alt-F5
+check('LEARN' in s.line(25), 'LEARN indicator while recording', s.line(25))
+s.send('hi\r')
+s.send('\x1b[15;3~')
+check('LEARN' not in s.line(25), 'LEARN indicator off', s.line(25))
+s.send('\x1b[1;3Q')               # Alt-F2
+check('STEP' in s.line(25), 'STEP indicator', s.line(25))
+s.send('\x1b[1;3Q')
+check('STEP' not in s.line(25), 'STEP indicator off', s.line(25))
 s.send('/qy', 0.4)
 s.close()
 

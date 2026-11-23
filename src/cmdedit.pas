@@ -258,6 +258,32 @@ begin
   end;
 end;
 
+procedure LearnRangeDone(S: TSession; const path: string);
+begin
+  S.LearnRange := S.Range;
+  S.LearnSet := True;
+  S.LearnOn := False;
+  S.LearnRow := S.Range.R1;
+  S.LearnCol := S.Range.C1;
+  S.LearnLine := '';
+end;
+
+procedure CmdLearn(S: TSession; const path: string);
+begin
+  if path.EndsWith('Range') then
+    S.AskRange('Enter learn range:', @LearnRangeDone, path)
+  else if path.EndsWith('Cancel') then
+  begin
+    S.LearnSet := False;
+    S.LearnOn := False;
+  end
+  else if S.LearnSet then
+  begin
+    S.SaveUndo;
+    S.EraseLearnRange;
+  end;
+end;
+
 procedure RegisterEditCommands(C: TCommands);
 const
   Dirs: array[0..3] of string = ('Right', 'Down', 'Left', 'Up');
@@ -273,6 +299,9 @@ begin
   C.Register('Worksheet Insert Row', @CmdInsDel);
   C.Register('Worksheet Delete Column', @CmdInsDel);
   C.Register('Worksheet Delete Row', @CmdInsDel);
+  C.Register('Worksheet Learn Range', @CmdLearn);
+  C.Register('Worksheet Learn Cancel', @CmdLearn);
+  C.Register('Worksheet Learn Erase', @CmdLearn);
   C.Register('Range Name Create', @CmdName);
   C.Register('Range Name Delete', @CmdName);
   C.Register('Range Name Reset', @CmdName);

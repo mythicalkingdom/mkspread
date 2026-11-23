@@ -72,6 +72,11 @@ function Canonical(k: Integer): Integer;
 
 function KeyName(k: Integer): string;
 
+{ The text that types key k when it is part of a macro: the character itself
+  (braces and tilde escaped), ~ for Enter, {DOWN} and so on for special keys.
+  '' for keys a macro cannot hold (Alt keys, Ctrl-Break, Insert). }
+function KeyMacroText(k: Integer): string;
+
 type
   { FIFO of logical keys.  The terminal feeds it; macros will too. }
   TKeyQueue = class
@@ -221,6 +226,43 @@ begin
     kResize: Result := '(resize)';
   else
     Result := '?' + IntToHex(k, 6);
+  end;
+end;
+
+function KeyMacroText(k: Integer): string;
+begin
+  case k of
+    kEnter: Result := '~';
+    kEsc: Result := '{ESC}';
+    kBackspace: Result := '{BS}';
+    kTab: Result := '{BIGRIGHT}';
+    kUp: Result := '{UP}';
+    kDown: Result := '{DOWN}';
+    kLeft: Result := '{LEFT}';
+    kRight: Result := '{RIGHT}';
+    kHome: Result := '{HOME}';
+    kEnd: Result := '{END}';
+    kPgUp: Result := '{PGUP}';
+    kPgDn: Result := '{PGDN}';
+    kDel: Result := '{DEL}';
+    kCtrlRight, kCtrlPgDn: Result := '{BIGRIGHT}';
+    kShiftTab, kCtrlLeft, kCtrlPgUp: Result := '{BIGLEFT}';
+    kCtrlHome: Result := '{HOME}';
+    kF1: Result := '{HELP}';
+    kF1 + 1: Result := '{EDIT}';
+    kF1 + 2: Result := '{NAME}';
+    kF1 + 3: Result := '{ABS}';
+    kF1 + 4: Result := '{GOTO}';
+    kF1 + 5: Result := '{WINDOW}';
+    kF1 + 6: Result := '{QUERY}';
+    kF1 + 7: Result := '{TABLE}';
+    kF1 + 8: Result := '{CALC}';
+    kF1 + 9: Result := '{GRAPH}';
+    Ord('{'): Result := '{{}';
+    Ord('}'): Result := '{}}';
+    Ord('~'): Result := '{~}';
+  else
+    if (k >= 32) and (k < kSpecialBase) then Result := UTF8Encode(WideChar(k)) else Result := '';
   end;
 end;
 

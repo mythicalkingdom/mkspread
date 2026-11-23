@@ -7,7 +7,8 @@ same screen layout, same `/` menu, same keystrokes.  Reads and writes
 Status: **phase 8**: macros.  Working now: everything from phase 7 (formulas
 and the `@function` library, editing commands, range names, titles, worksheet
 files) plus macros: keystroke macros, `{...}` special keys and commands,
-Alt-letter, Alt-F3 and `\0` autoexec (see `docs/macros.md`).  Not yet:
+Alt-letter, Alt-F3 and `\0` autoexec, keystroke recording (LEARN, Alt-F5) and
+STEP mode (Alt-F2) (see `docs/macros.md`).  Not yet:
 `/Worksheet Window`, printing, the `/Data` commands, help screens,
 recovery/autosave, `.XLS`.  Every other menu command is still a stub.
 Behaviour not yet verified is listed in `docs/compat-notes.md`; sources are in

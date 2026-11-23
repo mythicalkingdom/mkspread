@@ -169,6 +169,10 @@ begin
   A(3, 'Clear|Return to a single full-screen window');
   A(2, 'Status|Display the current global settings');
   A(2, 'Page|Insert a page-break row above the cell pointer');
+  A(2, 'Learn|Record keystrokes as a macro in a worksheet range');
+  A(3, 'Range|Specify the range where keystrokes are recorded');
+  A(3, 'Cancel|Forget the learn range');
+  A(3, 'Erase|Erase the contents of the learn range');
 
   { ---- Range ---- }
   A(1, 'Range');

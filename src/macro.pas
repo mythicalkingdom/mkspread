@@ -65,6 +65,7 @@ type
     FMenuCall: Boolean;
     FMenuDone, FMenuChosen: Boolean;
     FPromptDone: Boolean;
+    FStepWait, FStepOK: Boolean;
     function LoadLine: Boolean;
     procedure Jump(r, c, pos: Integer);
     procedure PushFrame(isFor: Boolean; const args: array of string);
@@ -77,6 +78,7 @@ type
     procedure StoreLabel(r, c: Integer; const text: string);
     procedure Changed;
     function StillWaiting: Boolean;
+    function StepGate: Boolean;
   public
     constructor Create(S: TSession);
     destructor Destroy; override;
@@ -134,8 +136,23 @@ begin
   Result := FActive;
 end;
 
+{ In STEP mode each key and command waits for a key press from the user. }
+function TMacro.StepGate: Boolean;
+begin
+  if (not FS.StepOn) or FStepOK then
+  begin
+    FStepOK := False;
+    FS.StepInfo := '';
+    exit(True);
+  end;
+  FStepWait := True;
+  FS.StepInfo := ColLetter(FCol) + IntToStr(FRow) + ': ' + Copy(FLine, 1, FPos - 1) + '>' + Copy(FLine, FPos, MaxInt);
+  Result := False;
+end;
+
 function TMacro.StillWaiting: Boolean;
 begin
+  if FStepWait then exit(True);
   case FWait of
     wNone: Result := False;
     wQuestion, wGet: Result := True;
@@ -159,6 +176,9 @@ begin
   FRepeatLeft := 0;
   FS.MacroActive := False;
   FS.IndicatorText := '';
+  FS.StepInfo := '';
+  FStepWait := False;
+  FStepOK := False;
 end;
 
 procedure TMacro.Start(r, c: Integer);
@@ -412,26 +432,6 @@ begin
   else if nm = 'HELP' then Result := kF1
   else if nm = 'ENTER' then Result := kEnter
   else Result := kNone;
-end;
-
-function NameForKey(k: Integer): string;
-begin
-  case k of
-    kUp: Result := '{UP}';
-    kDown: Result := '{DOWN}';
-    kLeft: Result := '{LEFT}';
-    kRight: Result := '{RIGHT}';
-    kHome: Result := '{HOME}';
-    kEnd: Result := '{END}';
-    kPgUp: Result := '{PGUP}';
-    kPgDn: Result := '{PGDN}';
-    kEnter: Result := '~';
-    kEsc: Result := '{ESC}';
-    kBackspace: Result := '{BS}';
-    kDel: Result := '{DEL}';
-  else
-    if (k >= 32) and (k < kSpecialBase) then Result := UTF8Encode(WideChar(k)) else Result := '';
-  end;
 end;
 
 { Executes one {command}.  Returns True when it produced a key (the repeat
@@ -739,6 +739,7 @@ begin
     end;
     if FRepeatLeft > 0 then
     begin
+      if not StepGate then exit(False);
       Dec(FRepeatLeft);
       k := FRepeatKey;
       exit(True);
@@ -773,6 +774,7 @@ begin
       FJumpPos := 1;
       continue;
     end;
+    if not StepGate then exit(False);          { one key or command at a time in STEP mode }
     b := Ord(FLine[FPos]);
     if FLine[FPos] = '~' then
     begin
@@ -824,12 +826,19 @@ begin
     Stop;
     exit;
   end;
+  if FStepWait then
+  begin
+    FStepWait := False;
+    FStepOK := True;
+    if k = kAltF1 + 1 then FS.StepOn := False;       { Alt-F2 again: run freely }
+    exit(True);                                       { the key only steps; it is not typed }
+  end;
   case FWait of
     wQuestion:
       if k = kEnter then FWait := wNone;           { the key itself is still processed }
     wGet:
       begin
-        s := NameForKey(k);
+        s := KeyMacroText(k);
         StoreLabel(FLoc.R1, FLoc.C1, s);
         FWait := wNone;
         Result := True;                            { used up: not typed into the worksheet }
