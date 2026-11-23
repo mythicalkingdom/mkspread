@@ -210,3 +210,8 @@ with the original program yet:
 - Parse: `*` marks gaps in a generated format line; `D` and `T` fields use the
   @DATEVALUE and @TIMEVALUE readers.
 - Fill: numbers only (no dates); the stop value is inclusive.
+
+## Observed: macro by-hand tests in the original program (release without Learn)
+- `{?}` resumes on Enter and that Enter is not typed; prompts of `{GETLABEL}`/`{GETNUMBER}` must be quoted strings.
+- The original program used for testing has no `/Worksheet Learn` (Learn arrived in release 2.2), so Learn/Alt-F5 recording
+  is an mkspread extension that could not be compared. Alt-F2 (STEP) was intercepted by the host OS/terminal, so STEP is unverified too.

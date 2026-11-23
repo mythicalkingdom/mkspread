@@ -40,6 +40,7 @@ tilde.  `{?}` pauses until the user presses Enter; that Enter only resumes the m
 | `{BEEP}` `{WAIT}` `{PANELOFF}` `{PANELON}` `{WINDOWSOFF}` `{WINDOWSON}` `{BREAKOFF}` `{BREAKON}` `{ONERROR}` | accepted, no effect |
 
 ## Recording (LEARN) and STEP
+(Learn is a release 2.2 feature; not all 2.x releases have it.)
 - **`/Worksheet Learn Range`** sets the range where keystrokes are recorded;
   `Cancel` forgets it, `Erase` empties it.
 - **Alt-F5** turns recording on and off (`LEARN` at the bottom).  Every key you
