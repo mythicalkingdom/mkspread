@@ -451,6 +451,13 @@ begin
     kEnd: FS.NameIdx := FS.NameChoices.Count - 1;
     kEsc, kBreak: FS.Mode := FS.NameReturn;
     33..126:
+      if (FS.NameReturn = mPrompt) and (FS.PromptFilter <> '') then
+      begin
+        { choosing a file and then typing a name: back to the prompt, the key is typed there }
+        FS.Mode := mPrompt;
+        TextPromptKey(k);
+      end
+      else
       { menu-style choices (not range names) are picked by their first letter }
       if not FS.ChoiceIsName then
         for i := 0 to FS.NameChoices.Count - 1 do
@@ -471,6 +478,20 @@ begin
           exit;
         end;
         FS.Mode := FS.NameReturn;
+        if (FS.Mode = mPrompt) and (FS.PromptFilter <> '') and (name <> '') and (name[Length(name)] = '/') then
+        begin
+          { a directory: go into it and list its files }
+          SetCurrentDir(Copy(name, 1, Length(name) - 1));
+          OpenFileChoices(FS, FS.PromptFilter, True);
+          exit;
+        end;
+        if (FS.Mode = mPrompt) and (FS.PromptFilter <> '') then
+        begin
+          { a file: the same as typing its name and pressing Enter }
+          FS.Entry := name;
+          TextPromptKey(kEnter);
+          exit;
+        end;
         if FS.Mode = mPoint then
         begin
           FS.Typing := True;

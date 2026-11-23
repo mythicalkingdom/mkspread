@@ -32,10 +32,10 @@ function RetrieveFile(S: TSession; const fileName: string): string;
 
 { names of the files in the current directory matching patterns such as
   '*.WK1;*.WKS' (case-insensitive), sorted }
-procedure ListFiles(const patterns: string; items: TStrings);
+procedure ListFiles(const patterns: string; items: TStrings; withDirs: Boolean = False);
 
 { puts such a list in the choice line so one can be picked (F3 in a file prompt) }
-procedure OpenFileChoices(S: TSession; const patterns: string);
+procedure OpenFileChoices(S: TSession; const patterns: string; quiet: Boolean = False);
 
 implementation
 
@@ -62,15 +62,16 @@ begin
   if (star < Length(p)) and (Copy(p, star + 1, 1) = '.') and (Pos('.', n) = 0) then Result := False;
 end;
 
-procedure ListFiles(const patterns: string; items: TStrings);
+procedure ListFiles(const patterns: string; items: TStrings; withDirs: Boolean);
 var
   sr: TSearchRec;
   pats: TStringArray;
   i: Integer;
-  sl: TStringList;
+  sl, dl: TStringList;
   ok: Boolean;
 begin
   sl := TStringList.Create;
+  dl := TStringList.Create;
   try
     pats := patterns.Split([';']);
     if FindFirst('*', faAnyFile and not faDirectory, sr) = 0 then
@@ -84,22 +85,37 @@ begin
       FindClose(sr);
     end;
     sl.Sort;
+    if withDirs then
+    begin
+      if FindFirst('*', faDirectory, sr) = 0 then
+      begin
+        repeat
+          if ((sr.Attr and faDirectory) <> 0) and (sr.Name <> '.') and (sr.Name <> '..') then
+            dl.Add(UpperCase(sr.Name) + '/');
+        until FindNext(sr) <> 0;
+        FindClose(sr);
+      end;
+      dl.Sort;
+      sl.AddStrings(dl);
+      if GetCurrentDir <> '/' then sl.Add('../');
+    end;
     items.Assign(sl);
   finally
     sl.Free;
+    dl.Free;
   end;
 end;
 
-procedure OpenFileChoices(S: TSession; const patterns: string);
+procedure OpenFileChoices(S: TSession; const patterns: string; quiet: Boolean);
 var
   items: TStringList;
 begin
   items := TStringList.Create;
   try
-    ListFiles(patterns, items);
+    ListFiles(patterns, items, True);
     if items.Count = 0 then
     begin
-      S.Msg := 'No files found';
+      if not quiet then S.Msg := 'No files found';
       exit;
     end;
     S.ShowChoices(items, mPrompt);
@@ -203,6 +219,7 @@ procedure CmdRetrieve(S: TSession; const path: string);
 begin
   S.AskText('Enter name of file to retrieve:', '', @RetrieveDone, path);
   S.PromptFilter := WorksheetPatterns;
+  OpenFileChoices(S, S.PromptFilter, True);
 end;
 
 { ---------------------------------------------------------------- save }
@@ -258,6 +275,7 @@ procedure CmdSave(S: TSession; const path: string);
 begin
   S.AskText('Enter name of file to save:', S.FileName, @SaveDone, path);
   S.PromptFilter := WorksheetPatterns;
+  OpenFileChoices(S, S.PromptFilter, True);
 end;
 
 { ---------------------------------------------------------------- xtract }
@@ -324,6 +342,7 @@ procedure CmdXtract(S: TSession; const path: string);
 begin
   S.AskText('Enter xtract file name:', '', @XtractName, path);
   S.PromptFilter := WorksheetPatterns;
+  OpenFileChoices(S, S.PromptFilter, True);
 end;
 
 { ---------------------------------------------------------------- combine }
@@ -418,6 +437,7 @@ procedure CmdCombine(S: TSession; const path: string);
 begin
   S.AskText('Enter name of file to combine:', '', @CombineFileDone, path);
   S.PromptFilter := WorksheetPatterns;
+  OpenFileChoices(S, S.PromptFilter, True);
 end;
 
 { ---------------------------------------------------------------- import }
@@ -443,6 +463,7 @@ procedure CmdImport(S: TSession; const path: string);
 begin
   S.AskText('Enter name of file to import:', '', @ImportDone, path);
   S.PromptFilter := '*';
+  OpenFileChoices(S, S.PromptFilter, True);
 end;
 
 { ---------------------------------------------------------------- directory, list, erase }
@@ -503,6 +524,7 @@ procedure CmdErase(S: TSession; const path: string);
 begin
   S.AskText('Enter name of file to erase:', '', @EraseDone, path);
   S.PromptFilter := PatternsFor(path);
+  OpenFileChoices(S, S.PromptFilter, True);
 end;
 
 procedure RegisterFileCommands(C: TCommands);

@@ -470,12 +470,12 @@ begin
       exit;
     end;
     S.SaveUndo;
-    S.Sheet.Put(S.CurRow, S.CurCol, '''|' + MakeFormatLine(t));
+    S.Sheet.Put(S.CurRow, S.CurCol, '|' + MakeFormatLine(t));
   end
   else if path.EndsWith('Format-Line Edit') then
   begin
     cell := S.Sheet.Find(S.CurRow, S.CurCol);
-    if (cell = nil) or not TextOf(cell, p, t) or (Copy(t, 1, 1) <> '|') then
+    if (cell = nil) or not TextOf(cell, p, t) or (p <> '|') then
     begin
       S.Msg := 'The pointer must be on a format line';
       exit;

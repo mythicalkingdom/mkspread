@@ -634,14 +634,18 @@ begin
   for r := input.R1 to input.R2 do
   begin
     cell := sh.Find(r, input.C1);
-    if (cell = nil) or not TextOf(cell, p, t) then continue;
-    if (t <> '') and (t[1] = '|') then
+    if (cell = nil) or not TextOf(cell, p, t) then
     begin
-      fmt := Copy(t, 2, MaxInt);
+      if not haveFmt and (r = input.R1) then exit('Parse input range must start with format line');
+      continue;
+    end;
+    if p = '|' then
+    begin
+      fmt := t;
       haveFmt := True;
       continue;
     end;
-    if not haveFmt then exit('There is no format line above the text');
+    if not haveFmt then exit('Parse input range must start with format line');
     if outRow > MaxRow then exit('The output does not fit on the worksheet');
     col := toC;
     i := 1;

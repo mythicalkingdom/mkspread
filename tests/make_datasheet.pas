@@ -198,10 +198,10 @@ begin
   { ---- Parse ---- }
   Add('Parse: label and number fields', 'J<b>..M<b+3>',
     '{GOTO}H<b+20>~/dprgiH<b>..H<b+3>~oJ<b>~g',
-    ['H<b>=''|L>>>>>V>>>', 'H<b+1>=''Jones 4567', 'H<b+2>=''Lee   89', 'H<b+3>=''Kim   1234']);
+    ['H<b>=|L>>>>>V>>>', 'H<b+1>=''Jones 4567', 'H<b+2>=''Lee   89', 'H<b+3>=''Kim   1234']);
   Add('Parse: skipped characters and a decimal value', 'J<b>..M<b+1>',
     '{GOTO}H<b+20>~/dprgiH<b>..H<b+1>~oJ<b>~g',
-    ['H<b>=''|L>>>S>V>>>>>', 'H<b+1>=''Abc  x 12.50']);
+    ['H<b>=|L>>>S>V>>>>>', 'H<b+1>=''Abc  x 12.50']);
 end;
 
 function Sub(const s: string; b: Integer): string;

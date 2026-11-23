@@ -1046,7 +1046,7 @@ begin
     S2.Calc.Recalc;
 
     Go('/fs');
-    Check((S2.Mode = mPrompt) and S2.PromptIsText, 'save asks for a name');
+    Check(((S2.Mode = mPrompt) or (S2.Mode = mNames)) and S2.PromptIsText, 'save asks for a name');
     CheckStr(S2.PromptText, 'Enter name of file to save:', 'save prompt text');
     Go('budget'#13);
     Check(FileExists(dir + '/budget.WK1'), 'the extension is added');
@@ -1094,7 +1094,7 @@ begin
     Go(#0);
     Ctl2.HandleKey(kF1 + 2);
     Check(S2.Mode = mNames, 'F3 lists files');
-    CheckStr(S2.NameChoices.CommaText, 'bad.wk1,budget.WK1', 'only worksheet files are listed');
+    CheckStr(S2.NameChoices.CommaText, 'bad.wk1,budget.WK1,../', 'only worksheet files are listed');
     Ctl2.HandleKey(kEsc);
     Ctl2.HandleKey(kEsc);
 
@@ -2125,7 +2125,7 @@ begin
   { ---- parse ---- }
   CheckStr(MakeFormatLine('Smith  25 12-Mar'), 'L>>>>**V>*L>>>>>', 'format line from a sample');
   S := TSession.Create;
-  S.Sheet.Put(1, 1, '''|L>>>>**V>*L>>>>>');
+  S.Sheet.Put(1, 1, '|L>>>>**V>*L>>>>>');
   S.Sheet.Put(2, 1, '''Smith  25 12-Mar');
   S.Sheet.Put(3, 1, '''Jones   7 30-Apr');
   CheckStr(ParseLabels(S.Sheet, NormRange(1, 1, 3, 1), 5, 3), '', 'parse');
@@ -2134,7 +2134,7 @@ begin
   S.Sheet.Clear;
   S.Sheet.Put(1, 1, '''no format line');
   Check(ParseLabels(S.Sheet, NormRange(1, 1, 1, 1), 5, 3) <> '', 'a format line is required');
-  S.Sheet.Put(1, 1, '''|L>>>*D>>>>>>>>*T>>>>>>');
+  S.Sheet.Put(1, 1, '|L>>>*D>>>>>>>>*T>>>>>>');
   S.Sheet.Put(2, 1, '''Anna 29-Feb-96 1:30 PM');
   ParseLabels(S.Sheet, NormRange(1, 1, 2, 1), 5, 3);
   CheckStr(RawAt(S, 5, 4), '35124', 'D fields become date serials');
@@ -2285,7 +2285,7 @@ begin
     S.Sheet.Put(2, 1, '''ab 12');
     S.CurRow := 1; S.CurCol := 1;
     Go('/dpfc');
-    CheckStr(RawAt(S, 1, 1), '''|L>*V>', '/Data Parse Format-Line Create');
+    CheckStr(RawAt(S, 1, 1), '|L>*V>', '/Data Parse Format-Line Create');
     Go('/dpi'); Go('a1.a2'#13);
     Go('/dpo'); Go('c1'#13);
     Go('/dpg');

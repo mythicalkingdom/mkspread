@@ -23,7 +23,7 @@ interface
 uses SysUtils, Classes, Generics.Collections, formula;
 
 const
-  LabelPrefixes = ['''', '"', '^', '\'];
+  LabelPrefixes = ['''', '"', '^', '\', '|'];
   ValueStarts   = ['0'..'9', '+', '-', '.', '@', '(', '#', '$'];
   MaxCol = 256;
   MaxRow = 8192;

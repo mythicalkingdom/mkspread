@@ -94,7 +94,7 @@ begin
       begin
         t := UTF8Decode(txt);
         case pre of
-          '''':
+          '''', '|':
             begin
               av := w;
               cj := ci + 1;
@@ -164,7 +164,7 @@ end;
 
 procedure TView.Draw(S: TSession);
 var
-  w, h, gridW, gridRows, rc, r, c, x, cx, i, n, line: Integer;
+  w, h, gridW, gridRows, rc, r, c, x, cx, i, n, line, ly: Integer;
   cols, rowsList: TIntArray;
   st, mname, es: string;
   p: Integer;
@@ -281,11 +281,18 @@ begin
     mNames:
       begin
         x := 1;
+        ly := 2;
+        if (S.NameReturn = mPrompt) and (S.PromptFilter <> '') then
+        begin
+          { choosing a file: the prompt with the directory and pattern, the files below }
+          TermPut(1, 2, taNormal, S.PromptText + ' ' + IncludeTrailingPathDelimiter(GetCurrentDir) + '*');
+          ly := 3;
+        end;
         for i := 0 to S.NameChoices.Count - 1 do
         begin
           if x + Length(S.NameChoices[i]) > w then break;
-          if i = S.NameIdx then TermPut(x, 2, taHi, S.NameChoices[i])
-          else TermPut(x, 2, taNormal, S.NameChoices[i]);
+          if i = S.NameIdx then TermPut(x, ly, taHi, S.NameChoices[i])
+          else TermPut(x, ly, taNormal, S.NameChoices[i]);
           Inc(x, Length(S.NameChoices[i]) + 2);
         end;
         if (not S.ChoiceIsName) and (S.NameIdx < S.ChoiceHelp.Count) then
