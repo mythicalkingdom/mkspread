@@ -155,7 +155,7 @@ begin
   c.Raw := '0.1234567891234';
   CheckStr(ValueText(c, sh, 9), '0.1234568', 'general fits the column width');
   c.Raw := '1234567890123';
-  CheckStr(ValueText(c, sh, 9), '1.235E+12', 'general falls back to scientific');
+  CheckStr(ValueText(c, sh, 9), '1.23E+12', 'general falls back to scientific');
   c.Raw := '-12345';
   CheckStr(ValueText(c, sh, 9), '-12345', 'negative general');
 
@@ -2873,7 +2873,7 @@ var
   Ctl: TController;
   ps: TPrintSettings;
   sh: TSheet;
-  err, txt, fn: string;
+  err, fn: string;
   L: TStringList;
   r, c: Integer;
   q: TKeyQueue;
@@ -2884,44 +2884,57 @@ var
     while not q.Empty do Ctl.HandleKey(q.Pop);
   end;
 
+  { prints from the top of a page }
+  procedure Run;
+  begin
+    ps.Pos := 0;
+    L.Text := PrintRangeText(sh, ps, err);
+  end;
+
 begin
   sh := TSheet.Create;
   ResetPrint(ps);
+  ps.Pos := 0;
   ps.Today := '01-Jan-26';
   sh.Put(1, 1, '''Name');  sh.Put(1, 2, '''Amount');
   sh.Put(2, 1, '''Ann');   sh.Put(2, 2, '12.5');
   sh.Put(3, 1, '''Bob');   sh.Put(3, 2, '7');
   L := TStringList.Create;
-  txt := PrintRangeText(sh, ps, err);
+  PrintRangeText(sh, ps, err);
   CheckStr(err, 'Specify a print range first', 'no range: a message');
   ps.RangeSet := True;
   ps.Range := NormRange(1, 1, 3, 2);
-  txt := PrintRangeText(sh, ps, err);
-  L.Text := txt;
-  CheckInt(L.Count, 66, 'one page is 66 lines');
+  Run;
+  CheckInt(L.Count, 8, 'a job stops after its last line: top margin, header, two blanks and three rows');
   CheckStr(L[5], '    Name     Amount', 'the first row after the top margin, header and two blank lines');
-  CheckStr(L[7], '    Bob' + StringOfChar(' ', 14) + '7', 'a number is right-aligned in its column');
-  CheckStr(L[6], '    Ann' + StringOfChar(' ', 11) + '12.5', 'a number shows as General');
+  CheckStr(L[7], '    Bob' + StringOfChar(' ', 13) + '7', 'a number leaves a blank at the right of its column');
+  CheckStr(L[6], '    Ann' + StringOfChar(' ', 10) + '12.5', 'a number shows as General');
+  CheckInt(ps.Pos, 8, 'the position in the page is kept');
+  { the next job carries on in the middle of the page }
+  L.Text := PrintRangeText(sh, ps, err);
+  CheckInt(L.Count, 3, 'no top margin when the paper is not at the top');
+  CheckInt(ps.Pos, 11, 'and the position moves on');
+  ps.Pos := 0;
   ps.Header := 'Report|Sales|Page #';
   ps.Footer := '@';
-  L.Text := PrintRangeText(sh, ps, err);
+  Run;
   CheckStr(L[2], '    Report' + StringOfChar(' ', 27) + 'Sales' + StringOfChar(' ', 28) + 'Page 1', 'header: left, centre and right parts');
-  CheckStr(L[63], '    01-Jan-26', 'footer with the date');
-  CheckInt(L.Count, 66, 'headers do not change the page length');
   ps.Header := '';
   ps.Footer := '';
   for r := 4 to 130 do sh.Put(r, 1, '''row ' + IntToStr(r));
   ps.Range := NormRange(1, 1, 130, 1);
-  L.Text := PrintRangeText(sh, ps, err);
-  CheckInt(L.Count, 66 * 3, '130 rows need three pages of 56 lines');
+  Run;
+  CheckInt(L.Count, 66 + 66 + 5 + 18, 'two full pages and a partial third');
   CheckStr(L[5], '    Name', 'first line on page one');
+  CheckStr(L[61 + 2], '', 'two blank lines end the text');
+  CheckStr(L[61 + 2], '', 'then the footer line');
   CheckStr(L[66 + 5], '    row 57', 'page two continues');
   ps.PgLength := 20;
   ps.Top := 0;
   ps.Bottom := 0;
-  L.Text := PrintRangeText(sh, ps, err);
-  CheckInt(L.Count mod 20, 0, 'pages have the page length');
+  Run;
   CheckStr(L[3], '    Name', 'no top margin: header line, two blanks, then text');
+  CheckStr(L[20 + 3], '    row 15', 'pages of 20 lines hold 14 rows');
   { page break row }
   ResetPrint(ps);
   ps.Today := '01-Jan-26';
@@ -2934,8 +2947,8 @@ begin
   sh.Put(5, 1, '''three');
   ps.RangeSet := True;
   ps.Range := NormRange(1, 1, 5, 1);
-  L.Text := PrintRangeText(sh, ps, err);
-  CheckInt(L.Count, 132, 'a page-break row starts a new page');
+  Run;
+  CheckInt(L.Count, 66 + 5 + 2, 'a page-break row ends the page');
   CheckStr(L[5], '    one', 'before the break');
   CheckStr(L[71], '    two', 'after the break');
   CheckStr(L[72], '    three', 'a row starting with | is not printed, the next one is');
@@ -2948,16 +2961,16 @@ begin
     sh.Put(1, c, IntToStr(c));
   end;
   ps.Range := NormRange(1, 1, 1, 10);
-  L.Text := PrintRangeText(sh, ps, err);
-  CheckInt(L.Count, 132, 'ten columns of 12 need two pages (six fit in 72)');
-  CheckStr(L[5], StringOfChar(' ', 15) + '1           2           3           4           5           6', 'first columns');
-  CheckStr(L[66 + 5], StringOfChar(' ', 15) + '7           8           9          10', 'the rest on the next page');
+  Run;
+  CheckInt(L.Count, 66 + 6, 'ten columns of 12: six fit in 72, the rest on the next page');
+  CheckStr(L[5], StringOfChar(' ', 14) + '1 ' + StringOfChar(' ', 10) + '2 ' + StringOfChar(' ', 10) + '3 ' + StringOfChar(' ', 10) + '4 ' + StringOfChar(' ', 10) + '5 ' + StringOfChar(' ', 10) + '6', 'first columns');
+  CheckStr(L[66 + 5], StringOfChar(' ', 14) + '7 ' + StringOfChar(' ', 10) + '8 ' + StringOfChar(' ', 10) + '9 ' + StringOfChar(' ', 9) + '10', 'the rest on the next page');
   ps.BorderColsSet := True;
   ps.BorderCols := NormRange(1, 1, 1, 1);
   ps.Range := NormRange(1, 2, 1, 10);
-  L.Text := PrintRangeText(sh, ps, err);
-  CheckStr(L[5], StringOfChar(' ', 15) + '1           2           3           4           5           6', 'border column then columns');
-  CheckInt(L.Count, 132, 'the border column leaves room for five columns');
+  Run;
+  CheckInt(L.Count, 66 + 6, 'the border column is printed on each page');
+  Check(Pos('1', L[66 + 5]) > 0, 'the border column starts the second page too');
   ps.BorderColsSet := False;
   { cell formulas and unformatted }
   sh.Free;
@@ -2968,13 +2981,13 @@ begin
   ps.Range := NormRange(1, 1, 3, 2);
   ps.CellFormulas := True;
   ps.Unformatted := True;
-  L.Text := PrintRangeText(sh, ps, err);
+  Run;
   CheckInt(L.Count, 3, 'one line per cell');
-  CheckStr(L[1], 'A2: +A1*2', 'the cell contents as the status line shows them');
+  CheckStr(L[1], '    A2: +A1*2', 'the cell contents as the status line shows them');
   ps.CellFormulas := False;
-  L.Text := PrintRangeText(sh, ps, err);
+  Run;
   CheckInt(L.Count, 3, 'unformatted: no page structure');
-  CheckStr(L[2], '         hi', 'a label in column B');
+  CheckStr(L[2], '    ' + StringOfChar(' ', 9) + 'hi', 'a label in column B');
   CheckStr(SetupBytes('\015x\027E'), #15'x'#27'E', 'setup string codes');
   L.Free;
   sh.Free;
@@ -2998,15 +3011,20 @@ begin
   CheckInt(S.Print.Left, 2, 'Options Margins Left');
   Check(S.Mode = mMenu, 'and the Options menu is open again');
   Go('q');
+  Go('osAB\015'#13);
+  Go('q');
   Go('g');
   Check(S.Mode = mMenu, 'the menu stays after Go');
+  Go('p');
   Go('q');
   Check(S.Mode = mReady, 'Quit leaves the print menu');
   Check(FileExists(fn), 'the print file exists');
   L := TStringList.Create;
   L.LoadFromFile(fn);
-  CheckStr(L[5], '  hello', 'the printed text, with the margin set');
+  CheckStr(L[5], '  hello', 'the printed text, with the margin set (no setup string in a file)');
+  CheckInt(L.Count, 66, 'Page finishes the page');
   L.Free;
+  CheckInt(S.Print.Pos, 0, 'the paper is at the top of a page again');
   S.Print.ToFile := False;
   fn := TmpDir + '/lp.out';
   PrintCommandOverride := 'cat > ' + fn;

@@ -46,6 +46,11 @@ function FormatNumber(d: Double; const f: TCellFormat; width: Integer): string;
   overflow check that turns too-wide text into asterisks). }
 function ValueText(cell: TCell; sh: TSheet; width: Integer): string;
 
+{ What a value cell shows on the screen and in print: like ValueText, but with the
+  blank column that the original program keeps at the right of numbers, errors and
+  right-aligned text (not after percentages or negatives in parentheses). }
+function ValueDisplay(cell: TCell; sh: TSheet; width: Integer): string;
+
 implementation
 
 uses SysUtils, Math, dates;
@@ -216,7 +221,7 @@ begin
     end;
     if (s <> '0') and (s <> '-0') then exit(s);
   end;
-  avail := width - neg - 6;
+  avail := width - 7;                 { room for a sign is kept even for positive numbers (observed) }
   if avail < 0 then avail := 0;
   if avail > 5 then avail := 5;
   Result := SciText(d, avail);
@@ -297,6 +302,31 @@ begin
     Result := 'ERR'                  { text that is neither a number nor a valid formula }
   else
     Result := cell.Raw;
+end;
+
+function ValueDisplay(cell: TCell; sh: TSheet; width: Integer): string;
+var
+  f: TCellFormat;
+  d: Double;
+begin
+  f := EffectiveFormat(cell, sh);
+  if (f.Kind = fkHidden) or (f.Kind = fkText) then exit(ValueText(cell, sh, width));
+  if CellNumber(cell, d) then
+  begin
+    if (d = 0) and not sh.ZeroDisplay then exit('');
+    case f.Kind of
+      fkGeneral: exit(FormatNumber(d, f, width - 1) + ' ');
+      fkFixed, fkSci, fkDate:
+        begin
+          Result := FormatNumber(d, f, width);
+          if (Result <> '') and (Result[Length(Result)] <> ')') then Result := Result + ' ';
+          exit;
+        end;
+    end;
+    exit(FormatNumber(d, f, width));
+  end;
+  Result := ValueText(cell, sh, width);
+  if (Result = 'ERR') or (Result = 'NA') then Result := Result + ' ';
 end;
 
 end.

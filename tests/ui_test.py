@@ -107,7 +107,7 @@ check(s.line(5).startswith('1   café'), 'UTF-8 label displayed', s.line(5))
 check(s.line(1).startswith("A1: 'café"), 'status shows raw contents', s.line(1))
 s.send('\x1b[B')
 s.send('42\r')
-check(s.line(6).rstrip().endswith('42') and len(s.line(6).rstrip()) == 4 + 9, 'number right aligned in cell', repr(s.line(6)))
+check(s.line(6).rstrip().endswith('42') and len(s.line(6).rstrip()) == 4 + 8, 'number right aligned in cell', repr(s.line(6)))
 s.send('/qy', 0.4)
 s.close()
 

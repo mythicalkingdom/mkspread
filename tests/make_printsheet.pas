@@ -184,6 +184,17 @@ begin
   for i := 1 to Length(Jobs) do
     if FileExists(outDir + Format('/P%.2d.PRN', [i])) then DeleteFile(outDir + Format('/P%.2d.PRN', [i]));
   SetCurrentDir(outDir);
+  if GetEnvironmentVariable('TRACE') <> '' then
+  begin
+    for i := 1 to Length(Jobs) do
+    begin
+      S.MacroRequest := Format('TST%.2d', [i]);
+      M.RunSync(Ctl);
+      WriteLn('after P', i, ' pos=', S.Print.Pos, ' pageno=', S.Print.PageNo);
+    end;
+    SetCurrentDir(here);
+    Halt(0);
+  end;
   S.MacroRequest := '\R';
   M.RunSync(Ctl);
   SetCurrentDir(here);

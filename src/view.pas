@@ -108,7 +108,7 @@ begin
           '"':
             begin
               t := Copy(t, 1, w);
-              PutBuf(x + w - Length(t), t);
+              if Length(t) < w then PutBuf(x + w - Length(t) - 1, t) else PutBuf(x, t);
             end;
           '^':
             begin
@@ -123,7 +123,7 @@ begin
       end
       else
       begin
-        t := UTF8Decode(ValueText(cell, S.Sheet, w));
+        t := UTF8Decode(ValueDisplay(cell, S.Sheet, w));
         if Length(t) > w then
         begin
           SetLength(t, w);

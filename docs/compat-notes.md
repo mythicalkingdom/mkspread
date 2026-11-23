@@ -231,3 +231,19 @@ with the original program yet:
 - Sort Go, Regression Go and Parse Go end the menu; Query Extract/Unique/Delete and the settings return to it.
 - Parse: format lines (prefix `|`), results and the `S`/decimal handling agreed with mkspread.
 - Query with a formula criterion under a header that is not a field name extracted every record in the original (not understood; mkspread extracts none); test dropped.
+
+## Observed: /Print run (PRINT.WK1, 2026-11-23)
+- The position in the page is remembered between print jobs (also across files).  A job starts with the top
+  margin and header only when the paper is at the top of a page; Go does not finish the last page, Page does
+  (blank lines up to the page length, then the footer area).  A page whose body is full ends at once (blank, blank,
+  footer line, bottom margin); the next page's top margin and header come with its first line.
+- A page: top margin, header line, two blank lines, text up to line `PgLength - Bottom - 3`, two blank lines, footer
+  line, bottom margin.  Page numbers start at 1 for every Go.
+- A job starting in the middle of a page prints the border rows first.  Column groups each start a new page.
+  The part of a long left-aligned label that overflows beyond one group's last column is printed in the next group.
+- The setup string is not written into a print file.  Unformatted and Cell-Formulas+Unformatted lines still move the
+  paper position.  Cell-Formulas show numbers normalised (0.10 -> 0.1).
+- Numbers right-aligned in General, Fixed, Sci and Date format, ERR, NA and right-aligned labels leave one blank
+  column at the right (Percent and negatives in parentheses do not).  A General number must fit in width - 1;
+  General scientific notation then has width - 7 decimals (a sign is always allowed for).  {CONTENTS} is not changed
+  for these (unverified).

@@ -23,7 +23,8 @@ type
     FileName: string;
     Pending: string;                  { text produced but not yet sent }
     SetupSent: Boolean;
-    LinePos: Integer;                 { lines already on the current page }
+    Pos: Integer;                     { lines already on the current page (0 = at the top) }
+    PageNo: Integer;                  { the page number in the footer of the page in progress }
     Today: string;                    { replaces the date in headers (for tests) }
   end;
 
@@ -31,13 +32,18 @@ procedure ResetPrint(var ps: TPrintSettings);          { Clear All }
 procedure ResetPrintFormat(var ps: TPrintSettings);    { Clear Format }
 
 { the text for the print range as set (Go): pages of PgLength lines }
-function PrintRangeText(sh: TSheet; const ps: TPrintSettings; out err: string): string;
+function PrintRangeText(sh: TSheet; var ps: TPrintSettings; out err: string): string;
+
+{ Line and Page: advance the paper one line / to the top of the next page }
+function PrintLineText(var ps: TPrintSettings): string;
+function PrintPageText(var ps: TPrintSettings): string;
 
 { the bytes of a setup string such as '\015' or '\027E' }
 function SetupBytes(const s: string): string;
 
 { one row of a range as it shows on the screen, for the given columns }
-function RenderRow(sh: TSheet; r: Integer; const cols: array of Integer): string;
+function RenderRow(sh: TSheet; r: Integer; const cols: array of Integer;
+                   spillCol: Integer = 0; spillMin: Integer = 1): string;
 
 implementation
 
@@ -95,9 +101,10 @@ end;
 
 { ---------------------------------------------------------------- rows }
 
-function RenderRow(sh: TSheet; r: Integer; const cols: array of Integer): string;
+function RenderRow(sh: TSheet; r: Integer; const cols: array of Integer;
+                   spillCol: Integer; spillMin: Integer): string;
 var
-  total, ci, cj, c, w, x, k, av: Integer;
+  total, ci, cj, c, w, x, k, av, kk, used, si: Integer;
   buf, t: UnicodeString;
   cell: TCell;
   pre: Char;
@@ -117,6 +124,45 @@ begin
   for ci := 0 to High(cols) do Inc(total, sh.ColWidth(cols[ci]));
   SetLength(buf, total);
   for k := 1 to total do buf[k] := ' ';
+  { a left-aligned label that began in an earlier group of columns carries on here }
+  if spillCol > 0 then
+  begin
+    si := -1;
+    for ci := 0 to High(cols) do
+      if cols[ci] = spillCol then si := ci;
+    if (si >= 0) and (sh.Find(r, spillCol) = nil) then
+    begin
+      kk := spillCol - 1;
+      used := 0;
+      while (kk >= spillMin) and (sh.Find(r, kk) = nil) do
+      begin
+        Inc(used, sh.ColWidth(kk));
+        Dec(kk);
+      end;
+      if kk >= spillMin then
+      begin
+        cell := sh.Find(r, kk);
+        if (cell <> nil) and TextOf(cell, pre, txt) and (pre = '''') then
+        begin
+          Inc(used, sh.ColWidth(kk));
+          t := UTF8Decode(txt);
+          if Length(t) > used then
+          begin
+            x := 1;
+            for ci := 0 to si - 1 do Inc(x, sh.ColWidth(cols[ci]));
+            av := sh.ColWidth(spillCol);
+            cj := si + 1;
+            while (cj <= High(cols)) and (sh.Find(r, cols[cj]) = nil) do
+            begin
+              Inc(av, sh.ColWidth(cols[cj]));
+              Inc(cj);
+            end;
+            PutBuf(x, Copy(t, used + 1, av));
+          end;
+        end;
+      end;
+    end;
+  end;
   x := 1;
   for ci := 0 to High(cols) do
   begin
@@ -143,7 +189,7 @@ begin
           '"':
             begin
               t := Copy(t, 1, w);
-              PutBuf(x + w - Length(t), t);
+              if Length(t) < w then PutBuf(x + w - Length(t) - 1, t) else PutBuf(x, t);
             end;
           '^':
             begin
@@ -158,7 +204,7 @@ begin
       end
       else
       begin
-        t := UTF8Decode(ValueText(cell, sh, w));
+        t := UTF8Decode(ValueDisplay(cell, sh, w));
         if Length(t) > w then
         begin
           SetLength(t, w);
@@ -183,12 +229,14 @@ end;
 function FormulaLine(sh: TSheet; r, c: Integer): string;
 var
   cell: TCell;
+  d: Double;
 begin
   cell := sh.Find(r, c);
   Result := ColLetter(c) + IntToStr(r) + ':';
   if not cell.Fmt.UseGlobal then Result := Result + ' (' + FormatTag(cell.Fmt) + ')';
   if sh.ColWidthIsSet(c) then Result := Result + ' [W' + IntToStr(sh.ColWidth(c)) + ']';
-  Result := Result + ' ' + cell.Raw;
+  if CellNumber(cell, d) and (cell.Formula = nil) then Result := Result + ' ' + NumToRaw(d)
+  else Result := Result + ' ' + cell.Raw;
 end;
 
 { ---------------------------------------------------------------- header, footer }
@@ -234,18 +282,135 @@ end;
 
 { ---------------------------------------------------------------- pages }
 
-function PrintRangeText(sh: TSheet; const ps: TPrintSettings; out err: string): string;
+function Indented0(const ps: TPrintSettings; const s: string): string;
+begin
+  if s = '' then Result := '' else Result := StringOfChar(' ', ps.Left) + s;
+end;
+
+type
+  { writes lines onto pages the way the original program does: the position in the
+    page carries over from one print job to the next, the top of a page is printed
+    when the first line of it is, and a job ends without finishing its last page }
+  TPager = class
+    Ps: ^TPrintSettings;
+    Outp: TStringList;
+    Borders: TStringList;
+    Width, Indent: Integer;
+    Today: string;
+    constructor Create(var aps: TPrintSettings; aout: TStringList);
+    function BodyEnd: Integer;
+    function Indented(const s: string): string;
+    procedure Body(const line: string);
+    procedure FinishPage;               { fill the page and print its end }
+    procedure PageEnd;
+  end;
+
+constructor TPager.Create(var aps: TPrintSettings; aout: TStringList);
+begin
+  Ps := @aps;
+  Outp := aout;
+  Borders := nil;
+  Width := aps.Right - aps.Left;
+  if Width < 1 then Width := 1;
+  Indent := aps.Left;
+  if aps.Today <> '' then Today := aps.Today else Today := FormatDateTime('dd-mmm-yy', Now);
+end;
+
+function TPager.BodyEnd: Integer;
+begin
+  Result := Ps^.PgLength - Ps^.Bottom - 3;
+  if Result < Ps^.Top + 4 then Result := Ps^.Top + 4;
+end;
+
+function TPager.Indented(const s: string): string;
+begin
+  if s = '' then Result := '' else Result := StringOfChar(' ', Indent) + s;
+end;
+
+procedure TPager.PageEnd;
+var
+  i: Integer;
+begin
+  Outp.Add('');
+  Outp.Add('');
+  Outp.Add(Indented(Decorate(Ps^.Footer, IntToStr(Ps^.PageNo), Today, Width)));
+  for i := 1 to Ps^.Bottom do Outp.Add('');
+  Ps^.Pos := 0;
+  Inc(Ps^.PageNo);
+end;
+
+procedure TPager.Body(const line: string);
+var
+  i: Integer;
+begin
+  if Ps^.Pos = 0 then
+  begin
+    for i := 1 to Ps^.Top do Outp.Add('');
+    Outp.Add(Indented(Decorate(Ps^.Header, IntToStr(Ps^.PageNo), Today, Width)));
+    Outp.Add('');
+    Outp.Add('');
+    Ps^.Pos := Ps^.Top + 3;
+    if Borders <> nil then
+      for i := 0 to Borders.Count - 1 do
+      begin
+        Outp.Add(Indented(Borders[i]));
+        Inc(Ps^.Pos);
+      end;
+  end;
+  Outp.Add(Indented(line));
+  Inc(Ps^.Pos);
+  if Ps^.Pos >= BodyEnd then PageEnd;
+end;
+
+procedure TPager.FinishPage;
+begin
+  if Ps^.Pos = 0 then exit;
+  while Ps^.Pos < BodyEnd do
+  begin
+    Outp.Add('');
+    Inc(Ps^.Pos);
+  end;
+  PageEnd;
+end;
+
+function PrintLineText(var ps: TPrintSettings): string;
+var
+  o: TStringList;
+  pg: TPager;
+begin
+  o := TStringList.Create;
+  pg := TPager.Create(ps, o);
+  try
+    pg.Body('');
+    Result := o.Text;
+  finally
+    pg.Free;
+    o.Free;
+  end;
+end;
+
+function PrintPageText(var ps: TPrintSettings): string;
+var
+  o: TStringList;
+  pg: TPager;
+begin
+  o := TStringList.Create;
+  pg := TPager.Create(ps, o);
+  try
+    pg.FinishPage;
+    Result := o.Text;
+  finally
+    pg.Free;
+    o.Free;
+  end;
+end;
+
+function PrintRangeText(sh: TSheet; var ps: TPrintSettings; out err: string): string;
 var
   outp: TStringList;
-  width, indent, bodyLines, pageNo: Integer;
-  today: string;
+  pg: TPager;
   rows: array of Integer;         { printable rows in order; page breaks are -1 }
   nrows: Integer;
-
-  function Indented(const s: string): string;
-  begin
-    if s = '' then Result := '' else Result := StringOfChar(' ', indent) + s;
-  end;
 
   procedure AddRow(r: Integer);
   begin
@@ -254,64 +419,17 @@ var
     Inc(nrows);
   end;
 
-  procedure PageStart;
-  var
-    i: Integer;
-  begin
-    Inc(pageNo);
-    for i := 1 to ps.Top do outp.Add('');
-    outp.Add(Indented(Decorate(ps.Header, IntToStr(pageNo), today, width)));
-    outp.Add('');                       { the header is followed by two blank lines }
-    outp.Add('');
-  end;
-
-  procedure PageEnd(used: Integer);
-  var
-    i: Integer;
-  begin
-    for i := used + 1 to bodyLines do outp.Add('');
-    outp.Add('');
-    outp.Add('');
-    outp.Add(Indented(Decorate(ps.Footer, IntToStr(pageNo), today, width)));
-    for i := 1 to ps.Bottom do outp.Add('');
-  end;
-
-  { prints body lines as pages; a page break comes before the lines whose numbers are in breaks }
-  procedure Paginate(lines: TStringList; breaks: TList; const borderLines: TStringList);
-  var
-    i, used, bl, k: Integer;
-  begin
-    bl := 0;
-    if borderLines <> nil then bl := borderLines.Count;
-    if bl >= bodyLines then bl := 0;
-    i := 0;
-    repeat
-      PageStart;
-      for k := 0 to bl - 1 do outp.Add(Indented(borderLines[k]));
-      used := bl;
-      while i < lines.Count do
-      begin
-        if (used > bl) and (breaks.IndexOf(Pointer(PtrInt(i))) >= 0) then break;
-        outp.Add(Indented(lines[i]));
-        Inc(i);
-        Inc(used);
-        if used >= bodyLines then break;
-      end;
-      PageEnd(used);
-    until i >= lines.Count;
-  end;
-
 var
   r, c, i, j: Integer;
   cols: array of Integer;
   group: array of Integer;
-  gw, w: Integer;
-  lines, borderLines: TStringList;
-  breaks: TList;
+  gw, w, width: Integer;
+  borderLines: TStringList;
   cell: TCell;
   pre: Char;
   txt: string;
-  skip: Boolean;
+  skip, firstGroup: Boolean;
+  firstCol: Integer;
   rg: TRange;
   colList: array of Integer;
   ncols: Integer;
@@ -326,15 +444,10 @@ begin
   rg := ps.Range;
   width := ps.Right - ps.Left;
   if width < 1 then width := 1;
-  indent := ps.Left;
-  bodyLines := ps.PgLength - ps.Top - ps.Bottom - 6;
-  if bodyLines < 1 then bodyLines := 1;
-  if ps.Today <> '' then today := ps.Today else today := FormatDateTime('dd-mmm-yy', Now);
-  pageNo := 0;
+  ps.PageNo := 1;
   outp := TStringList.Create;
-  lines := TStringList.Create;
   borderLines := TStringList.Create;
-  breaks := TList.Create;
+  pg := TPager.Create(ps, outp);
   try
     { the printable rows: a row whose first cell is a label starting | is not printed,
       and a label starting |:: is a page break }
@@ -357,19 +470,21 @@ begin
       begin
         if rows[i] < 0 then
         begin
-          breaks.Add(Pointer(PtrInt(lines.Count)));
+          if not ps.Unformatted then pg.FinishPage;
           continue;
         end;
         for c := rg.C1 to rg.C2 do
         begin
           cell := sh.Find(rows[i], c);
-          if (cell <> nil) and (cell.Raw <> '') then lines.Add(FormulaLine(sh, rows[i], c));
+          if (cell <> nil) and (cell.Raw <> '') then
+            if ps.Unformatted then
+            begin
+              outp.Add(Indented0(ps, FormulaLine(sh, rows[i], c)));
+              Inc(ps.Pos);
+            end
+            else pg.Body(FormulaLine(sh, rows[i], c));
         end;
       end;
-      if ps.Unformatted then
-        for i := 0 to lines.Count - 1 do outp.Add(lines[i])
-      else
-        Paginate(lines, breaks, nil);
       Result := outp.Text;
       exit;
     end;
@@ -379,7 +494,11 @@ begin
       SetLength(cols, rg.C2 - rg.C1 + 1);
       for c := rg.C1 to rg.C2 do cols[c - rg.C1] := c;
       for i := 0 to nrows - 1 do
-        if rows[i] >= 0 then outp.Add(RenderRow(sh, rows[i], cols));
+        if rows[i] >= 0 then
+        begin
+          outp.Add(Indented0(ps, RenderRow(sh, rows[i], cols)));
+          Inc(ps.Pos);               { unformatted lines still move the paper }
+        end;
       Result := outp.Text;
       exit;
     end;
@@ -396,6 +515,7 @@ begin
       end;
     j := ncols;                                  { the border columns come first in every group }
     c := rg.C1;
+    firstGroup := True;
     while c <= rg.C2 do
     begin
       SetLength(group, 0);
@@ -416,26 +536,31 @@ begin
         Inc(c);
         if gw >= width then break;
       end;
-      lines.Clear;
-      breaks.Clear;
+      firstCol := group[j];                         { the first column that is not a border column }
+      if not firstGroup then pg.FinishPage;       { the next group of columns starts a new page }
+      firstGroup := False;
       borderLines.Clear;
       if ps.BorderRowsSet then
         for r := ps.BorderRows.R1 to ps.BorderRows.R2 do borderLines.Add(RenderRow(sh, r, group));
+      if borderLines.Count > 0 then pg.Borders := borderLines else pg.Borders := nil;
+      { a job that starts in the middle of a page prints the border rows first }
+      if (ps.Pos > 0) and (borderLines.Count > 0) then
+        for i := 0 to borderLines.Count - 1 do
+        begin
+          outp.Add(Indented0(ps, borderLines[i]));
+          Inc(ps.Pos);
+        end;
       for i := 0 to nrows - 1 do
       begin
-        if rows[i] < 0 then
-          breaks.Add(Pointer(PtrInt(lines.Count)))
-        else
-          lines.Add(RenderRow(sh, rows[i], group));
+        if rows[i] < 0 then pg.FinishPage
+        else pg.Body(RenderRow(sh, rows[i], group, firstCol, rg.C1));
       end;
-      Paginate(lines, breaks, borderLines);
     end;
     Result := outp.Text;
   finally
+    pg.Free;
     outp.Free;
-    lines.Free;
     borderLines.Free;
-    breaks.Free;
   end;
 end;
 

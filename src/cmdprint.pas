@@ -43,7 +43,8 @@ uses SysUtils, Classes, Process, sheet, editops, printing;
 
 procedure Emit(S: TSession; const text: string);
 begin
-  if (S.Print.Pending = '') and not S.Print.SetupSent then
+  { the setup string goes to the printer only, not into a print file }
+  if (S.Print.Pending = '') and not S.Print.SetupSent and not S.Print.ToFile then
   begin
     S.Print.Pending := SetupBytes(S.Print.Setup);
     S.Print.SetupSent := True;
@@ -262,16 +263,10 @@ begin
   else if path.EndsWith(' Range') then S.AskRange('Enter print range:', @RangeDone, path)
   else if path.EndsWith(' Line') then
   begin
-    Emit(S, #10);
-    Inc(S.Print.LinePos);
-    if S.Print.LinePos >= S.Print.PgLength then S.Print.LinePos := 0;
+    Emit(S, PrintLineText(S.Print));
   end
-  else if path.EndsWith(' Page') then
-  begin
-    Emit(S, #12);
-    S.Print.LinePos := 0;
-  end
-  else if path.EndsWith(' Align') then S.Print.LinePos := 0
+  else if path.EndsWith(' Page') then Emit(S, PrintPageText(S.Print))
+  else if path.EndsWith(' Align') then S.Print.Pos := 0
   else if path.EndsWith(' Go') then
   begin
     text := PrintRangeText(S.Sheet, S.Print, err);
@@ -281,7 +276,6 @@ begin
       exit;
     end;
     Emit(S, text);
-    S.Print.LinePos := 0;
   end;
 end;
 
