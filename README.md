@@ -18,6 +18,9 @@ To check the engine against the original program, `make testsheet` writes
 `private-samples/MKTEST.WK1`: open it in 1-2-3, recalculate, and read the
 number of differences in A3.
 
+`make macrosheet` writes `private-samples/MACROS.WK1` the same way for the macro
+interpreter: press Alt-R in 1-2-3 and read the differences in A3.
+
 The file layer is tested against real files: if a `private-samples/` folder
 (git-ignored) holds `.WK1` files, `make test` loads each one, checks every
 formula re-encodes byte for byte and recalculates to the stored value, and

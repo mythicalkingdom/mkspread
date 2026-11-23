@@ -21,6 +21,13 @@ testsheet: build/make_testsheet
 	./build/make_testsheet private-samples/MKTEST.WK1
 	for n in 1 2 3 4 5 6 7 8 9; do ./build/make_testsheet private-samples/MKT$$n.WK1 $$n > /dev/null; done
 
+build/make_macrosheet: $(SRCS) tests/make_macrosheet.pas
+	$(FPC) $(FLAGS) tests/make_macrosheet.pas
+
+macrosheet: build/make_macrosheet
+	mkdir -p private-samples
+	./build/make_macrosheet private-samples/MACROS.WK1
+
 run: all
 	./build/mkspread
 
@@ -36,4 +43,4 @@ clean:
 	rm -f build/*
 	touch build/.gitkeep
 
-.PHONY: all run demo test testsheet clean
+.PHONY: all run demo test testsheet macrosheet clean
