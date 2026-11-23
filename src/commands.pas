@@ -42,7 +42,7 @@ procedure RegisterCoreCommands(C: TCommands);
 
 implementation
 
-uses cmdsheet, cmdedit, cmdfile;
+uses cmdsheet, cmdedit, cmdfile, cmddata;
 
 constructor TCommands.Create;
 begin
@@ -93,6 +93,7 @@ begin
   RegisterSheetCommands(C);
   RegisterEditCommands(C);
   RegisterFileCommands(C);
+  RegisterDataCommands(C);
 end;
 
 end.

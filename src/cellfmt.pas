@@ -20,7 +20,7 @@ unit cellfmt;
 
 interface
 
-uses sheet;
+uses sheet, formula;
 
 function IsLabel(cell: TCell): Boolean;
 
@@ -31,6 +31,9 @@ function TextOf(cell: TCell; out prefix: Char; out text: string): Boolean;
 { The numeric value of a cell, when it has one (a number, or a formula whose
   result is a number). }
 function CellNumber(cell: TCell; out d: Double): Boolean;
+
+{ what a cell holds as a value (formulas use their last computed value) }
+function CellValueOf(cell: TCell): TValue;
 
 function EffectiveFormat(cell: TCell; sh: TSheet): TCellFormat;
 
@@ -45,7 +48,7 @@ function ValueText(cell: TCell; sh: TSheet; width: Integer): string;
 
 implementation
 
-uses SysUtils, Math, dates, formula;
+uses SysUtils, Math, dates;
 
 function IsLabel(cell: TCell): Boolean;
 begin
@@ -62,6 +65,25 @@ begin
     exit;
   end;
   Result := IsNumberLiteral(cell.Raw, d);
+end;
+
+function CellValueOf(cell: TCell): TValue;
+var
+  d: Double;
+  p: Char;
+  t: string;
+begin
+  if (cell = nil) or (cell.Raw = '') then exit(EmptyValue);
+  if cell.Formula <> nil then exit(cell.Val);
+  if TextOf(cell, p, t) then
+  begin
+    Result := StrValue(t);
+    Result.IsLabel := True;
+  end
+  else if IsNumberLiteral(cell.Raw, d) then
+    Result := NumValue(d)
+  else
+    Result := ErrValue;
 end;
 
 function TextOf(cell: TCell; out prefix: Char; out text: string): Boolean;

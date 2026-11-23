@@ -24,7 +24,7 @@ interface
 uses Classes, sheet, menutree, calc;
 
 type
-  TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint, mNames);
+  TMode = (mReady, mLabel, mValue, mEdit, mMenu, mGoto, mPrompt, mPoint, mNames, mFind);
 
   TSession = class;
   { A command, or the continuation of a command that asked a question.
@@ -33,6 +33,23 @@ type
 
   { while a numeric prompt is open, Left/Right arrows can nudge a column width }
   TPromptLive = (plNone, plColumn, plGlobalWidth);
+
+  { what /Data Sort, Query, Table, Regression and Parse have been told }
+  TDataSettings = record
+    SortSet: Boolean;
+    SortRange: TRange;
+    Key1, Key2: Integer;                 { key columns, 0 = none }
+    Asc1, Asc2: Boolean;
+    QInSet, QCritSet, QOutSet: Boolean;
+    QIn, QCrit, QOut: TRange;
+    TableKind: Integer;                  { 0 none, 1 or 2 }
+    TableRange, TableIn1, TableIn2: TRange;
+    RegXSet, RegYSet, RegOutSet: Boolean;
+    RegX, RegY, RegOut: TRange;
+    RegZero: Boolean;
+    ParseInSet, ParseOutSet: Boolean;
+    ParseIn, ParseOut: TRange;
+  end;
 
   TSession = class
   public
@@ -95,6 +112,10 @@ type
     Range: TRange;                      { result of the last range prompt }
 
     PendFmt: TCellFormat;               { scratch for multi-step commands }
+    PendNum: array[0..3] of Double;
+    Data: TDataSettings;
+    FindRows: TList;                    { /Data Query Find: matching record rows }
+    FindIdx: Integer;
     PendRange: TRange;
     PendStr: string;
 
@@ -145,6 +166,7 @@ begin
   Calc := TCalc.Create(Sheet);
   Menus := BuildMenuTree;
   NameChoices := TStringList.Create;
+  FindRows := TList.Create;
   ChoiceHelp := TStringList.Create;
   CurCol := 1; CurRow := 1; LeftCol := 1; TopRow := 1;
   GridRows := 20;
@@ -154,6 +176,7 @@ end;
 
 destructor TSession.Destroy;
 begin
+  FindRows.Free;
   ChoiceHelp.Free;
   NameChoices.Free;
   Menus.Free;
@@ -431,7 +454,9 @@ end;
 
 function TSession.Selection: TRange;
 begin
-  if (Mode = mPoint) and Anchored then
+  if (Mode = mFind) and Data.QInSet then
+    Result := NormRange(CurRow, Data.QIn.C1, CurRow, Data.QIn.C2)
+  else if (Mode = mPoint) and Anchored then
     Result := NormRange(AnchorR, AnchorC, CurRow, CurCol)
   else
     Result := NormRange(CurRow, CurCol, CurRow, CurCol);

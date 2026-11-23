@@ -289,6 +289,37 @@ check('STEP' not in s.line(25), 'STEP indicator off', s.line(25))
 s.send('/qy', 0.4)
 s.close()
 
+# ---- phase 9: /Data commands on screen ----
+s = run()
+s.send('/df')
+check(s.line(2).startswith('Enter fill range:'), 'fill range prompt', s.line(2))
+s.send('a1.a5\r')
+check(s.line(2).startswith('Start: 0'), 'start prompt with its default', s.line(2))
+s.send('\x7f1\r')       # backspace, 1
+s.send('\x7f2\r')
+s.send('\r')
+check(s.line(5).rstrip().endswith('1') and s.line(6).rstrip().endswith('3') and s.line(9).rstrip().endswith('9'),
+      'a column filled 1, 3, 5, 7, 9', s.line(5) + s.line(6) + s.line(9))
+# find mode on a small database
+s.send('\x1b[15~c1\r')
+s.send("Name\r\x1b[B")
+s.send("Ann\r\x1b[B")
+s.send("Bob\r")
+s.send('\x1b[15~e1\r')
+s.send("Name\r\x1b[B")
+s.send("Bob\r")
+s.send('/dqi')
+s.send('c1.c3\r')
+s.send('/dqc')
+s.send('e1.e2\r')
+s.send('/dqf')
+check(s.line(1).endswith('FIND'), 'FIND indicator', s.line(1))
+check(s.line(1).startswith('C3:'), 'the pointer is on the matching record', s.line(1))
+s.send('\x1b')
+check(s.line(1).endswith('READY'), 'Esc leaves FIND', s.line(1))
+s.send('/qy', 0.4)
+s.close()
+
 # ---- screen size handling ----
 s = run(rows=20, cols=70)
 check('too small' in s.line(1), 'small terminal message', s.line(1))

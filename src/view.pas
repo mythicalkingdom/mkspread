@@ -236,6 +236,7 @@ begin
     mPrompt: mname := 'EDIT';
     mPoint: mname := 'POINT';
     mNames: mname := 'NAMES';
+    mFind: mname := 'FIND';
   end;
   TermPut(1, 1, taNormal, PadR(st, w - Length(mname) - 1));
   if S.IndicatorText <> '' then mname := S.IndicatorText;

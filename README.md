@@ -4,15 +4,14 @@ A terminal spreadsheet for people who know the classic DOS spreadsheets:
 same screen layout, same `/` menu, same keystrokes.  Reads and writes
 `.WK1` / `.WKS` files (planned).  GPL-3.0-or-later.
 
-Status: **phase 8**: macros.  Working now: everything from phase 7 (formulas
-and the `@function` library, editing commands, range names, titles, worksheet
-files) plus macros: keystroke macros, `{...}` special keys and commands,
-Alt-letter, Alt-F3 and `\0` autoexec, keystroke recording (LEARN, Alt-F5) and
-STEP mode (Alt-F2) (see `docs/macros.md`).  Not yet:
-`/Worksheet Window`, printing, the `/Data` commands, help screens,
-recovery/autosave, `.XLS`.  Every other menu command is still a stub.
-Behaviour not yet verified is listed in `docs/compat-notes.md`; sources are in
-`docs/SOURCES.md`.
+Status: **phase 9**: the `/Data` commands.  Working now: everything from
+phase 8 (formulas and the `@function` library, editing commands, range names,
+titles, worksheet files, macros with recording and step mode) plus `/Data`
+Fill, Table 1 and 2, Sort, Query (Find, Extract, Unique, Delete),
+Distribution, Matrix, Regression and Parse (see `docs/data.md`).  Not yet:
+`/Worksheet Window`, `/Print`, help screens, recovery/autosave, `.XLS`.  Every
+other menu command is still a stub.  Behaviour not yet verified is listed in
+`docs/compat-notes.md`; sources are in `docs/SOURCES.md`.
 
 To check the engine against the original program, `make testsheet` writes
 `private-samples/MKTEST.WK1`: open it in 1-2-3, recalculate, and read the
@@ -32,7 +31,7 @@ round-trips the file.
     ./build/mkspread --help
 
 Layout: `src/` source units (UI-free core: `sheet`, `cellfmt`, `menutree`,
-`dates`, `formula`, `calc`, `editops`, `charsets`, `wk1`, `textimport`, `macro`, `funclib` (with `fn_core`, `fn_time`, `fn_fin`), `u8edit`, `menudata`, `keys`, `session`, `commands`, `cmdsheet`, `cmdedit`, `cmdfile`,
+`dates`, `formula`, `calc`, `editops`, `charsets`, `wk1`, `textimport`, `macro`, `dataops`, `cmddata`, `funclib` (with `fn_core`, `fn_time`, `fn_fin`), `u8edit`, `menudata`, `keys`, `session`, `commands`, `cmdsheet`, `cmdedit`, `cmdfile`,
 `controller`; terminal side:
 `ncw`, `terminal`, `view`, `keytest`), `tests/`, `docs/`, `build/` (output).
 See `docs/keys.md` for key mapping.

@@ -24,6 +24,10 @@ var
   { the clock @NOW reads; tests replace it }
   ClockNow: function: Double;
 
+{ text to date serial / time fraction, as @DATEVALUE and @TIMEVALUE read them }
+function ParseDate(const text: string; out serial: Integer): Boolean;
+function ParseTime(const text: string; out fraction: Double): Boolean;
+
 implementation
 
 uses SysUtils, Math, formula, dates;

@@ -37,6 +37,11 @@ function InsertCols(sh: TSheet; at, count: Integer): string;
 function DeleteRows(sh: TSheet; r1, r2: Integer): string;
 function DeleteCols(sh: TSheet; c1, c2: Integer): string;
 
+{ Rewrites the rows of g: target row i gets the contents of source row order[i]
+  (an offset into g, or -1 for an empty row).  Formulas move like /Copy: their
+  relative references shift with the row. }
+function ReorderRows(sh: TSheet; const g: TRange; const order: array of Integer): string;
+
 { Copy a range of src into dst with its top left at (toR, toC).  Formulas are
   shifted like /Copy does; with asValues they are replaced by their values.
   Column widths of fully copied columns come along when copyWidths is set. }
@@ -320,6 +325,43 @@ begin
     if copyWidths then
       for c := g.C1 to g.C2 do
         if src.ColWidthIsSet(c) then dst.SetColWidth(toC + (c - g.C1), src.ColWidthSetting(c));
+  finally
+    m.Free;
+  end;
+end;
+
+{ ---------------------------------------------------------------- reorder rows }
+
+function ReorderRows(sh: TSheet; const g: TRange; const order: array of Integer): string;
+var
+  snap: TSnapArray;
+  m: TCopyMapper;
+  i, j, w, s: Integer;
+  raw: string;
+begin
+  Result := '';
+  w := g.C2 - g.C1 + 1;
+  if Length(order) <> g.R2 - g.R1 + 1 then exit('Internal error: bad row order');
+  if Int64(Length(order)) * w > MaxEditCells then exit('Range too large for this version');
+  Snapshot(sh, g, snap);
+  m := TCopyMapper.Create;
+  try
+    m.DC := 0;
+    for i := 0 to High(order) do
+    begin
+      s := order[i];
+      m.DR := i - s;
+      for j := 0 to w - 1 do
+      begin
+        if (s < 0) or not snap[s * w + j].Exists then
+        begin
+          sh.Remove(g.R1 + i, g.C1 + j);
+          continue;
+        end;
+        raw := MappedRaw(snap[s * w + j].Raw, m);
+        Store(sh, g.R1 + i, g.C1 + j, snap[s * w + j], raw);
+      end;
+    end;
   finally
     m.Free;
   end;

@@ -20,9 +20,14 @@ unit fn_fin;
 
 interface
 
+uses formula;
+
+{ Does a record's cell satisfy one criterion cell?  (Shared with /Data Query.) }
+function DbCriterionMet(const crit, cell: TValue): Boolean;
+
 implementation
 
-uses SysUtils, Math, formula;
+uses SysUtils, Math;
 
 { ------------------------------------------------------------------ statistics }
 
@@ -546,6 +551,11 @@ begin
   finally
     st.Free;
   end;
+end;
+
+function DbCriterionMet(const crit, cell: TValue): Boolean;
+begin
+  Result := CriterionMet(crit, cell);
 end;
 
 function FnDsum(const a: TNodeArray; s: TCellSource): TValue; begin Result := DbRun(a, s, 1); end;

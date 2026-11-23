@@ -191,3 +191,22 @@ Confirmed by that run: keystroke macros, `{EDIT}`, `{ESC}`, `{BS}`, `{IF}`
 tilde, a number cell ending a macro, text formulas as macro lines, `{QUIT}`,
 `{DEFINE}`, menu keystrokes and `{BEEP}`.  Still to be checked by hand:
 `{?}`, `{GETLABEL}`, `{GETNUMBER}`, `{MENUBRANCH}`, `{GET}`, STEP and LEARN.
+
+## /Data commands (phase 9)
+Written from knowledge of the classic behaviour; nothing here has been compared
+with the original program yet:
+- Sort order: numbers before text, text compared by character code (case
+  sensitive), empty cells last for both ascending and descending order.
+- Sort moves formulas like /Copy (relative references shift with the row).
+- Query label criteria: exact, case-insensitive, wildcards, `~`; no formula
+  criteria; Extract copies values; an output range with several rows limits the
+  record count, a one-row output range is unlimited.
+- Distribution: a value counts in the first bin it does not exceed; values above
+  the last bin are counted in the extra cell; text and blanks are ignored.
+- Regression: the report layout (labels in the first column, values in the
+  fourth, coefficients from the fourth) is a guess; zero-intercept R squared is
+  computed against the mean of Y.
+- Table: results are stored as values; the macro key {TABLE} and F8 re-run it.
+- Parse: `*` marks gaps in a generated format line; `D` and `T` fields use the
+  @DATEVALUE and @TIMEVALUE readers.
+- Fill: numbers only (no dates); the stop value is inclusive.

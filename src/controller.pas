@@ -40,6 +40,7 @@ type
     function EditText(k: Integer): Boolean;
     procedure TextPromptKey(k: Integer);
     procedure NamesKey(k: Integer);
+    procedure FindKey(k: Integer);
     procedure PromptKey(k: Integer);
     procedure PointKey(k: Integer);
     procedure MenuKey(k: Integer);
@@ -58,7 +59,7 @@ type
 
 implementation
 
-uses keys, cellfmt, formula, menutree, u8edit, cmdfile, SysUtils;
+uses keys, cellfmt, formula, menutree, u8edit, cmdfile, cmddata, SysUtils;
 
 { Alt-F3 picked a range name: start it as a macro }
 procedure RunNameChosen(S: TSession; const path: string);
@@ -237,7 +238,7 @@ begin
       end;
     kF1 + 5: StubKey('F6 (WINDOW)');
     kF1 + 6: StubKey('F7 (QUERY)');
-    kF1 + 7: StubKey('F8 (TABLE)');
+    kF1 + 7: RunLastTable(FS);
     kF1 + 8: FS.Calc.Recalc;
     kF1 + 9: StubKey('F10 (GRAPH)');
     kAltF1: StubKey('Alt-F1 (COMPOSE)');
@@ -399,6 +400,32 @@ begin
       if FS.PromptFilter <> '' then OpenFileChoices(FS, FS.PromptFilter)
       else FS.OpenNameList;
   end;
+end;
+
+{ /Data Query Find: step through the matching records }
+procedure TController.FindKey(k: Integer);
+var
+  n: Integer;
+begin
+  n := FS.FindRows.Count;
+  case k of
+    kDown, kRight, 32: if FS.FindIdx < n - 1 then Inc(FS.FindIdx);
+    kUp, kLeft: if FS.FindIdx > 0 then Dec(FS.FindIdx);
+    kHome: FS.FindIdx := 0;
+    kEnd: FS.FindIdx := n - 1;
+    kEnter, kEsc, kBreak:
+      begin
+        FS.CurRow := FS.OrigRow;
+        FS.CurCol := FS.OrigCol;
+        FS.TopRow := FS.OrigTop;
+        FS.LeftCol := FS.OrigLeft;
+        FS.Mode := mReady;
+        exit;
+      end;
+  end;
+  FS.CurRow := PtrInt(FS.FindRows[FS.FindIdx]);
+  FS.CurCol := FS.Data.QIn.C1;
+  FS.Normalize;
 end;
 
 procedure TController.NamesKey(k: Integer);
@@ -679,6 +706,7 @@ begin
     mPrompt: PromptKey(k);
     mPoint: PointKey(k);
     mNames: NamesKey(k);
+    mFind: FindKey(k);
   end;
   FS.EndChange;
 end;

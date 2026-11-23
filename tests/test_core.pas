@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, Classes, Math, fn_time, macro, cmdfile, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
+uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller;
 
 var
   Fails, Total: Integer;
@@ -1912,6 +1912,427 @@ begin
   MM.Free; MC.Free; MCmds.Free; MS.Free;
 end;
 
+{ ---- /Data commands ---- }
+function Num(S: TSession; r, c: Integer): Double;
+var
+  v: TValue;
+begin
+  v := CellValueOf(S.Sheet.Find(r, c));
+  if v.Kind = vkNum then Result := v.Num else Result := NaN;
+end;
+
+procedure CheckNear(S: TSession; r, c: Integer; want: Double; const what: string);
+begin
+  Inc(Total);
+  if IsNan(Num(S, r, c)) or (Abs(Num(S, r, c) - want) > 1e-9 * (1 + Abs(want))) then
+  begin
+    Inc(Fails);
+    WriteLn('FAIL: ', what, ': got ', RawAt(S, r, c), ' want ', want:0:12);
+  end;
+end;
+
+procedure PutRows(S: TSession; r: Integer; const cells: array of string);
+var
+  c: Integer;
+begin
+  for c := 0 to High(cells) do
+    if cells[c] <> '' then S.Sheet.Put(r, c + 1, cells[c]);
+end;
+
+procedure TestDataOps;
+const
+  Noisy: array[0..4] of string = ('2.2', '2.8', '3.6', '4.5', '5.1');
+  X2: array[0..5] of Integer = (1, 0, 2, 1, 3, 2);
+var
+  S: TSession;
+  rows: TList;
+  n: Integer;
+  msg: string;
+begin
+  { ---- fill ---- }
+  S := TSession.Create;
+  CheckInt(FillRange(S.Sheet, NormRange(1, 1, 5, 1), 1, 2, 100), 5, 'fill count');
+  CheckStr(RawAt(S, 1, 1) + RawAt(S, 3, 1) + RawAt(S, 5, 1), '159', 'fill start and step');
+  S.Sheet.Clear;
+  CheckInt(FillRange(S.Sheet, NormRange(1, 1, 5, 1), 1, 1, 3), 3, 'fill stops at the stop value');
+  Check(S.Sheet.Find(4, 1) = nil, 'and leaves the rest alone');
+  S.Sheet.Clear;
+  FillRange(S.Sheet, NormRange(1, 1, 3, 2), 1, 1, 8191);
+  CheckStr(RawAt(S, 3, 1) + RawAt(S, 1, 2), '34', 'fill goes down each column in turn');
+  S.Sheet.Clear;
+  FillRange(S.Sheet, NormRange(1, 1, 3, 1), 10, -5, -100);
+  CheckStr(RawAt(S, 3, 1), '0', 'a negative step');
+  FillRange(S.Sheet, NormRange(1, 3, 3, 3), 0, 0.1, 1);
+  CheckStr(RawAt(S, 3, 3), '0.2', 'a fractional step');
+  S.Free;
+
+  { ---- sort ---- }
+  S := TSession.Create;
+  PutRows(S, 1, ['''pear', '30']);
+  PutRows(S, 2, ['''apple', '10']);
+  PutRows(S, 3, ['''fig', '20']);
+  PutRows(S, 4, ['''Apple', '']);
+  PutRows(S, 5, ['''kiwi', '5']);
+  CheckStr(SortRows(S.Sheet, NormRange(1, 1, 5, 2), 2, True, 0, True), '', 'sort by the amounts');
+  CheckStr(RawAt(S, 1, 1) + ' ' + RawAt(S, 2, 1) + ' ' + RawAt(S, 3, 1) + ' ' + RawAt(S, 4, 1) + ' ' + RawAt(S, 5, 1),
+           '''kiwi ''apple ''fig ''pear ''Apple', 'numbers ascending, empty cell last');
+  SortRows(S.Sheet, NormRange(1, 1, 5, 2), 2, False, 0, True);
+  CheckStr(RawAt(S, 1, 1) + ' ' + RawAt(S, 4, 1) + ' ' + RawAt(S, 5, 1), '''pear ''kiwi ''Apple', 'descending, empty still last');
+  SortRows(S.Sheet, NormRange(1, 1, 5, 2), 1, True, 0, True);
+  CheckStr(RawAt(S, 1, 1) + ' ' + RawAt(S, 2, 1) + ' ' + RawAt(S, 3, 1), '''Apple ''apple ''fig', 'text in character order (capitals first)');
+  S.Sheet.Clear;
+  PutRows(S, 1, ['''b', '2']);
+  PutRows(S, 2, ['''a', '2']);
+  PutRows(S, 3, ['''c', '1']);
+  SortRows(S.Sheet, NormRange(1, 1, 3, 2), 2, True, 1, True);
+  CheckStr(RawAt(S, 1, 1) + RawAt(S, 2, 1) + RawAt(S, 3, 1), '''c''a''b', 'secondary key breaks ties');
+  S.Sheet.Clear;
+  PutRows(S, 1, ['3', '+A1*2']);
+  PutRows(S, 2, ['1', '+A2*2']);
+  PutRows(S, 3, ['2', '+A3*2']);
+  SortRows(S.Sheet, NormRange(1, 1, 3, 2), 1, True, 0, True);
+  CheckStr(RawAt(S, 1, 2) + RawAt(S, 3, 2), '+A1*2+A3*2', 'formulas keep their own row when rows move');
+  S.Calc.Recalc;
+  CheckStr(Shown(S, 3, 2), '6', 'and still calculate');
+  S.Sheet.Clear;
+  PutRows(S, 1, ['1', '2']);
+  Check(SortRows(S.Sheet, NormRange(1, 1, 1, 2), 5, True, 0, True) <> '', 'a key outside the range is refused');
+  S.Free;
+
+  { ---- distribution ---- }
+  S := TSession.Create;
+  for n := 1 to 10 do S.Sheet.Put(n, 1, IntToStr(n));
+  S.Sheet.Put(1, 3, '3'); S.Sheet.Put(2, 3, '6'); S.Sheet.Put(3, 3, '9');
+  CheckStr(Distribution(S.Sheet, NormRange(1, 1, 10, 1), NormRange(1, 3, 3, 3)), '', 'distribution');
+  CheckStr(RawAt(S, 1, 4) + RawAt(S, 2, 4) + RawAt(S, 3, 4) + RawAt(S, 4, 4), '3331', 'counts per bin and the rest');
+  S.Sheet.Put(2, 3, '1');
+  Check(Distribution(S.Sheet, NormRange(1, 1, 10, 1), NormRange(1, 3, 3, 3)) <> '', 'bins must ascend');
+  S.Free;
+
+  { ---- matrices ---- }
+  S := TSession.Create;
+  PutRows(S, 1, ['4', '7']);
+  PutRows(S, 2, ['2', '6']);
+  CheckStr(MatrixInvert(S.Sheet, NormRange(1, 1, 2, 2), 5, 1), '', 'invert');
+  CheckNear(S, 5, 1, 0.6, 'inverse 11');
+  CheckNear(S, 5, 2, -0.7, 'inverse 12');
+  CheckNear(S, 6, 1, -0.2, 'inverse 21');
+  CheckNear(S, 6, 2, 0.4, 'inverse 22');
+  PutRows(S, 10, ['1', '2']);
+  PutRows(S, 11, ['2', '4']);
+  Check(Pos('singular', MatrixInvert(S.Sheet, NormRange(10, 1, 11, 2), 14, 1)) > 0, 'a singular matrix is reported');
+  Check(MatrixInvert(S.Sheet, NormRange(1, 1, 2, 1), 14, 1) = 'The matrix must be square', 'only square matrices');
+  PutRows(S, 20, ['1', '2']);
+  PutRows(S, 21, ['3', '4']);
+  PutRows(S, 23, ['5', '6']);
+  PutRows(S, 24, ['7', '8']);
+  CheckStr(MatrixMultiply(S.Sheet, NormRange(20, 1, 21, 2), NormRange(23, 1, 24, 2), 30, 1), '', 'multiply');
+  CheckStr(RawAt(S, 30, 1) + ' ' + RawAt(S, 30, 2) + ' ' + RawAt(S, 31, 1) + ' ' + RawAt(S, 31, 2), '19 22 43 50', 'product');
+  Check(MatrixMultiply(S.Sheet, NormRange(20, 1, 21, 2), NormRange(23, 1, 23, 2), 30, 1) <> '', 'sizes must agree');
+  S.Free;
+
+  { ---- regression ---- }
+  S := TSession.Create;
+  for n := 1 to 5 do
+  begin
+    S.Sheet.Put(n, 1, IntToStr(n));
+    S.Sheet.Put(n, 2, Noisy[n - 1]);
+  end;
+  CheckStr(Regression(S.Sheet, NormRange(1, 1, 5, 1), NormRange(1, 2, 5, 2), 8, 1, False), '', 'regression');
+  CheckNear(S, 9, 4, 1.39, 'constant');
+  CheckNear(S, 10, 4, 0.09486832980505142, 'standard error of the estimate');
+  CheckNear(S, 11, 4, 0.9952229299363057, 'R squared');
+  CheckNear(S, 12, 4, 5, 'observations');
+  CheckNear(S, 13, 4, 3, 'degrees of freedom');
+  CheckNear(S, 15, 4, 0.75, 'coefficient');
+  CheckNear(S, 16, 4, 0.03, 'standard error of the coefficient');
+  CheckStr(RawAt(S, 8, 1), '''Regression Output:', 'report heading');
+  CheckStr(RawAt(S, 15, 1), '''X Coefficient(s)', 'coefficient label');
+  S.Sheet.Clear;
+  { two variables, exact fit: y = 1 + 2 x1 + 3 x2 }
+  for n := 1 to 6 do
+  begin
+    S.Sheet.Put(n, 1, IntToStr(n));
+    S.Sheet.Put(n, 2, IntToStr(X2[n - 1]));
+    S.Sheet.Put(n, 3, IntToStr(1 + 2 * n + 3 * X2[n - 1]));
+  end;
+  Regression(S.Sheet, NormRange(1, 1, 6, 2), NormRange(1, 3, 6, 3), 10, 1, False);
+  CheckNear(S, 11, 4, 1, 'two variables: constant');
+  CheckNear(S, 17, 4, 2, 'first coefficient');
+  CheckNear(S, 17, 5, 3, 'second coefficient');
+  CheckNear(S, 13, 4, 1, 'R squared of an exact fit');
+  S.Sheet.Clear;
+  { through the origin }
+  for n := 1 to 4 do
+  begin
+    S.Sheet.Put(n, 1, IntToStr(n));
+    S.Sheet.Put(n, 2, IntToStr(2 * n));
+  end;
+  Regression(S.Sheet, NormRange(1, 1, 4, 1), NormRange(1, 2, 4, 2), 10, 1, True);
+  CheckNear(S, 11, 4, 0, 'zero intercept: constant');
+  CheckNear(S, 17, 4, 2, 'zero intercept: coefficient');
+  CheckNear(S, 15, 4, 3, 'zero intercept: degrees of freedom');
+  Check(Regression(S.Sheet, NormRange(1, 1, 3, 1), NormRange(1, 2, 4, 2), 10, 1, False) <> '', 'ranges must match');
+  S.Free;
+
+  { ---- query ---- }
+  S := TSession.Create;
+  PutRows(S, 1, ['''Name', '''Dept', '''Pay']);
+  PutRows(S, 2, ['''Smith', '''Sales', '10']);
+  PutRows(S, 3, ['''Jones', '''Admin', '20']);
+  PutRows(S, 4, ['''Smyth', '''Sales', '30']);
+  PutRows(S, 5, ['''Brown', '''Sales', '10']);
+  PutRows(S, 7, ['''Dept']);
+  PutRows(S, 8, ['''Sales']);
+  rows := TList.Create;
+  CheckStr(QueryMatches(S.Sheet, NormRange(1, 1, 5, 3), NormRange(7, 1, 8, 1), rows), '', 'query');
+  CheckInt(rows.Count, 3, 'three Sales records');
+  CheckInt(PtrInt(rows[2]), 5, 'the third is the fourth record');
+  PutRows(S, 9, ['''Admin']);
+  QueryMatches(S.Sheet, NormRange(1, 1, 5, 3), NormRange(7, 1, 9, 1), rows);
+  CheckInt(rows.Count, 4, 'criteria rows are alternatives');
+  PutRows(S, 7, ['''Dept', '''Name']);
+  PutRows(S, 8, ['''Sales', '''Sm*']);
+  PutRows(S, 9, ['', '']);
+  S.Sheet.Remove(9, 1);
+  QueryMatches(S.Sheet, NormRange(1, 1, 5, 3), NormRange(7, 1, 8, 2), rows);
+  CheckInt(rows.Count, 2, 'cells in a criteria row must all hold (with a wildcard)');
+  { extract }
+  PutRows(S, 12, ['''Pay', '''Name']);
+  PutRows(S, 8, ['''Sales', '']);
+  S.Sheet.Remove(8, 2);
+  CheckStr(QueryExtract(S.Sheet, NormRange(1, 1, 5, 3), NormRange(7, 1, 8, 2), NormRange(12, 1, 12, 2), False), '', 'extract');
+  CheckStr(RawAt(S, 13, 1) + ' ' + RawAt(S, 13, 2), '10 ''Smith', 'extracted fields follow the output header order');
+  CheckStr(RawAt(S, 15, 1) + ' ' + RawAt(S, 15, 2), '10 ''Brown', 'third extracted record');
+  Check(S.Sheet.Find(16, 1) = nil, 'and no more');
+  PutRows(S, 12, ['''Pay']);
+  S.Sheet.Remove(12, 2);
+  QueryExtract(S.Sheet, NormRange(1, 1, 5, 3), NormRange(7, 1, 8, 2), NormRange(12, 1, 12, 1), True);
+  CheckStr(RawAt(S, 13, 1) + RawAt(S, 14, 1), '1030', 'unique extracts each value once');
+  Check(S.Sheet.Find(15, 1) = nil, 'the repeated 10 is left out');
+  PutRows(S, 12, ['''Pay']);
+  Check(QueryExtract(S.Sheet, NormRange(1, 1, 5, 3), NormRange(7, 1, 8, 2), NormRange(12, 1, 13, 1), False) <> '',
+        'an output range that is too small is reported');
+  { delete }
+  CheckStr(QueryDelete(S.Sheet, NormRange(1, 1, 5, 3), NormRange(7, 1, 8, 1), n), '', 'delete');
+  CheckInt(n, 3, 'three records deleted');
+  CheckStr(RawAt(S, 2, 1) + ' ' + RawAt(S, 2, 3), '''Jones 20', 'the remaining record moved up');
+  Check(S.Sheet.Find(3, 1) = nil, 'and the rest of the input range is empty');
+  CheckStr(RawAt(S, 1, 1), '''Name', 'the field names stay');
+  rows.Free;
+  S.Free;
+
+  { ---- parse ---- }
+  CheckStr(MakeFormatLine('Smith  25 12-Mar'), 'L>>>>**V>*L>>>>>', 'format line from a sample');
+  S := TSession.Create;
+  S.Sheet.Put(1, 1, '''|L>>>>**V>*L>>>>>');
+  S.Sheet.Put(2, 1, '''Smith  25 12-Mar');
+  S.Sheet.Put(3, 1, '''Jones   7 30-Apr');
+  CheckStr(ParseLabels(S.Sheet, NormRange(1, 1, 3, 1), 5, 3), '', 'parse');
+  CheckStr(RawAt(S, 5, 3) + ' ' + RawAt(S, 5, 4) + ' ' + RawAt(S, 5, 5), '''Smith 25 ''12-Mar', 'first line split into fields');
+  CheckStr(RawAt(S, 6, 3) + ' ' + RawAt(S, 6, 4), '''Jones 7', 'second line');
+  S.Sheet.Clear;
+  S.Sheet.Put(1, 1, '''no format line');
+  Check(ParseLabels(S.Sheet, NormRange(1, 1, 1, 1), 5, 3) <> '', 'a format line is required');
+  S.Sheet.Put(1, 1, '''|L>>>*D>>>>>>>>*T>>>>>>');
+  S.Sheet.Put(2, 1, '''Anna 29-Feb-96 1:30 PM');
+  ParseLabels(S.Sheet, NormRange(1, 1, 2, 1), 5, 3);
+  CheckStr(RawAt(S, 5, 4), '35124', 'D fields become date serials');
+  S.Free;
+end;
+
+procedure TestDataCommands;
+var
+  S: TSession;
+  Ctl: TController;
+  Cmds: TCommands;
+  q: TKeyQueue;
+  i: Integer;
+
+  procedure Go(const keys: string);
+  begin
+    q.PushString(keys);
+    while not q.Empty do Ctl.HandleKey(q.Pop);
+  end;
+
+begin
+  S := TSession.Create;
+  Cmds := TCommands.Create;
+  RegisterCoreCommands(Cmds);
+  Ctl := TController.Create(S, Cmds);
+  q := TKeyQueue.Create;
+  try
+    { fill }
+    Go('/df');
+    Check(S.Mode = mPoint, '/Data Fill asks for the range');
+    Go('a1.a4'#13);
+    CheckStr(S.PromptText, 'Start:', 'then Start');
+    CheckStr(S.Entry, '0', 'with the default 0');
+    Go(#8'10'#13);
+    CheckStr(S.PromptText, 'Step:', 'then Step');
+    Go(#8'5'#13);
+    CheckStr(S.PromptText, 'Stop:', 'then Stop');
+    CheckStr(S.Entry, '8191', 'default 8191');
+    Go(#13);
+    CheckStr(RawAt(S, 1, 1) + RawAt(S, 2, 1) + RawAt(S, 3, 1) + RawAt(S, 4, 1), '10152025', 'filled 10, 15, 20, 25');
+    Ctl.HandleKey(kAltF1 + 3);
+    Check(S.Sheet.Find(1, 1) = nil, 'undo of a fill');
+
+    { sort via the menu }
+    S.Sheet.Clear;
+    PutRows(S, 1, ['''c', '3']);
+    PutRows(S, 2, ['''a', '1']);
+    PutRows(S, 3, ['''b', '2']);
+    Go('/dsd');
+    Go('a1.b3'#13);
+    Go('/dsp');
+    Go('b1'#13);
+    CheckStr(S.PromptText, 'Sort order (A or D):', 'sort order prompt');
+    Go(#13);
+    Check(S.Data.SortSet and (S.Data.Key1 = 2) and S.Data.Asc1, 'sort settings remembered');
+    Go('/dsg');
+    CheckStr(RawAt(S, 1, 1) + RawAt(S, 2, 1) + RawAt(S, 3, 1), '''a''b''c', '/Data Sort Go');
+    Go('/dsp');
+    Go('b1'#13#8'd'#13);
+    Go('/dsg');
+    CheckStr(RawAt(S, 1, 1), '''c', 'descending order');
+    Go('/dsr');
+    Check(not S.Data.SortSet, 'Sort Reset');
+    Go('/dsg');
+    CheckStr(S.Msg, 'Set the data range first', 'Go without a range says so');
+
+    { query find, extract, delete }
+    S.Sheet.Clear;
+    PutRows(S, 1, ['''Name', '''Pay']);
+    PutRows(S, 2, ['''Ann', '10']);
+    PutRows(S, 3, ['''Bob', '20']);
+    PutRows(S, 4, ['''Cy', '10']);
+    PutRows(S, 6, ['''Pay']);
+    PutRows(S, 7, ['10']);
+    PutRows(S, 9, ['''Name']);
+    Go('/dqi'); Go('a1.b4'#13);
+    Go('/dqc'); Go('a6.a7'#13);
+    Go('/dqo'); Go('a9.a9'#13);
+    Check(S.Data.QInSet and S.Data.QCritSet and S.Data.QOutSet, 'query ranges remembered');
+    Go('/dqf');
+    Check(S.Mode = mFind, 'Find enters FIND mode');
+    CheckInt(S.CurRow, 2, 'on the first matching record');
+    Ctl.HandleKey(kDown);
+    CheckInt(S.CurRow, 4, 'Down goes to the next match');
+    Ctl.HandleKey(kDown);
+    CheckInt(S.CurRow, 4, 'and stops at the last');
+    Ctl.HandleKey(kUp);
+    CheckInt(S.CurRow, 2, 'Up goes back');
+    Ctl.HandleKey(kEnd);
+    CheckInt(S.CurRow, 4, 'End is the last match');
+    Ctl.HandleKey(kEsc);
+    Check(S.Mode = mReady, 'Esc leaves FIND mode');
+    CheckInt(S.CurRow, 1, 'and puts the pointer back');
+    Go('/dqe');
+    CheckStr(RawAt(S, 10, 1) + RawAt(S, 11, 1), '''Ann''Cy', '/Data Query Extract');
+    Go('/dqd');
+    Check(S.Mode = mNames, 'Delete asks for confirmation');
+    Go(#27);
+    CheckStr(RawAt(S, 2, 1), '''Ann', 'cancel keeps the records');
+    Go('/dqd');
+    Go('d');
+    CheckStr(RawAt(S, 2, 1), '''Bob', 'confirmed delete removes the matches');
+    CheckStr(S.Msg, '2 record(s) deleted', 'and says how many');
+    Go('/dqr');
+    Check(not S.Data.QInSet, 'Query Reset');
+
+    { distribution and matrix }
+    S.Sheet.Clear;
+    for i := 1 to 6 do S.Sheet.Put(i, 1, IntToStr(i));
+    S.Sheet.Put(1, 3, '2'); S.Sheet.Put(2, 3, '4');
+    Go('/dd');
+    Go('a1.a6'#13'c1.c2'#13);
+    CheckStr(RawAt(S, 1, 4) + RawAt(S, 2, 4) + RawAt(S, 3, 4), '222', '/Data Distribution');
+    S.Sheet.Clear;
+    PutRows(S, 1, ['2', '0']);
+    PutRows(S, 2, ['0', '4']);
+    Go('/dmi');
+    Go('a1.b2'#13'd1'#13);
+    CheckStr(RawAt(S, 1, 4) + ' ' + RawAt(S, 2, 5), '0.5 0.25', '/Data Matrix Invert');
+    Go('/dmm');
+    Go('a1.b2'#13'a1.b2'#13'g1'#13);
+    CheckStr(RawAt(S, 1, 7) + ' ' + RawAt(S, 2, 8), '4 16', '/Data Matrix Multiply');
+
+    { regression }
+    S.Sheet.Clear;
+    for i := 1 to 5 do
+    begin
+      S.Sheet.Put(i, 1, IntToStr(i));
+      S.Sheet.Put(i, 2, IntToStr(2 * i + 1));
+    end;
+    Go('/drx'); Go('a1.a5'#13);
+    Go('/dry'); Go('b1.b5'#13);
+    Go('/dro'); Go('d1'#13);
+    Go('/drg');
+    CheckStr(Shown(S, 2, 7), '1', 'regression constant through the menu');
+    CheckStr(Shown(S, 8, 7), '2', 'and coefficient');
+    Go('/dric');
+    Check(not S.Data.RegZero, 'Intercept Compute');
+    Go('/driz');
+    Check(S.Data.RegZero, 'Intercept Zero');
+    Go('/drr');
+    Check(not S.Data.RegXSet, 'Regression Reset');
+
+    { parse }
+    S.Sheet.Clear;
+    S.Sheet.Put(2, 1, '''ab 12');
+    S.CurRow := 1; S.CurCol := 1;
+    Go('/dpfc');
+    CheckStr(RawAt(S, 1, 1), '''|L>*V>', '/Data Parse Format-Line Create');
+    Go('/dpi'); Go('a1.a2'#13);
+    Go('/dpo'); Go('c1'#13);
+    Go('/dpg');
+    CheckStr(RawAt(S, 1, 3) + ' ' + RawAt(S, 1, 4), '''ab 12', '/Data Parse Go');
+    S.CurRow := 1; S.CurCol := 1;
+    Go('/dpfe');
+    Check(S.Mode = mEdit, 'Format-Line Edit opens the line for editing');
+    Ctl.HandleKey(kEsc);
+
+    { data table, one and two input cells }
+    S.Sheet.Clear;
+    S.Sheet.Put(1, 1, '2');
+    S.Sheet.Put(1, 2, '3');
+    S.Sheet.Put(2, 5, '+A1*10');
+    PutRows(S, 3, ['', '', '', '1']);
+    PutRows(S, 4, ['', '', '', '2']);
+    PutRows(S, 5, ['', '', '', '3']);
+    S.Sheet.Put(2, 5, '+A1*10');
+    S.Calc.Recalc;
+    Go('/dt1');
+    Go('d2.e5'#13'a1'#13);
+    CheckStr(RawAt(S, 3, 5) + RawAt(S, 4, 5) + RawAt(S, 5, 5), '102030', 'a one-variable table');
+    CheckStr(RawAt(S, 1, 1), '2', 'the input cell is restored');
+    S.Sheet.Put(3, 4, '5');
+    Ctl.HandleKey(kF1 + 7);
+    CheckStr(RawAt(S, 3, 5), '50', 'F8 recalculates the last table');
+    Go('/dtr');
+    Ctl.HandleKey(kF1 + 7);
+    CheckStr(S.Msg, 'No data table has been defined', 'Table Reset forgets it');
+    S.Sheet.Clear;
+    S.Sheet.Put(1, 1, '2');
+    S.Sheet.Put(1, 2, '3');
+    S.Sheet.Put(3, 4, '+A1*B1');
+    PutRows(S, 3, ['', '', '', '+A1*B1', '1', '2']);
+    PutRows(S, 4, ['', '', '', '10']);
+    PutRows(S, 5, ['', '', '', '20']);
+    S.Calc.Recalc;
+    Go('/dt2');
+    Go('d3.f5'#13'a1'#13'b1'#13);
+    CheckStr(RawAt(S, 4, 5) + ' ' + RawAt(S, 5, 6), '10 40', 'a two-variable table');
+    CheckStr(RawAt(S, 1, 1) + RawAt(S, 1, 2), '23', 'both input cells restored');
+  finally
+    q.Free;
+    Ctl.Free;
+    Cmds.Free;
+    S.Free;
+  end;
+end;
+
 { ---- dates (serial numbers, including the 1900 leap-year quirk) ---- }
 procedure TestDates;
 var
@@ -2452,6 +2873,8 @@ begin
   TestEditOps;
   TestFunctions;
   TestMacros;
+  TestDataOps;
+  TestDataCommands;
   TestCharsets;
   TestFormatBytes;
   TestRpn;

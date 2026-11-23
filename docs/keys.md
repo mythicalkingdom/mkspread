@@ -35,3 +35,4 @@ after Esc is Alt-letter.  On very slow links, type Esc then wait briefly.
 | F3 | POINT mode, name prompts | list range names; Left/Right choose, Enter accepts |
 | Alt-F2 | STEP mode on/off (macros run one key at a time) | |
 | Alt-F5 | LEARN mode on/off (record keystrokes into the learn range) | |
+| F8 | re-run the last /Data Table | |

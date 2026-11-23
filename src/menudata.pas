@@ -341,6 +341,8 @@ begin
   A(3, 'Quit|Return to READY mode');
   A(2, 'Parse|Convert a column of long labels into separate cells');
   A(3, 'Format-Line|Create or edit a format line');
+  A(4, 'Create|Create a format line from the label below the pointer');
+  A(4, 'Edit|Edit the format line at the pointer');
   A(3, 'Input-Column|Specify the column of labels to parse');
   A(3, 'Output-Range|Specify where to put the parsed data');
   A(3, 'Reset|Cancel parse settings');

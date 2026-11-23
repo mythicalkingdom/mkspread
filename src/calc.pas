@@ -46,6 +46,8 @@ type
     procedure Recalc;                 { everything, now }
     { the value of a formula in the context of this worksheet (for macros) }
     function EvalFormula(f: TFormula): TValue;
+    { a number, formula or quoted text typed by the user; False if it makes no sense }
+    function EvalText(const text: string; out v: TValue): Boolean;
     { Called after a command: recalculates (automatic) or flags (manual). }
     procedure SheetChanged;
     property Circular: Boolean read FCircular;
@@ -228,6 +230,34 @@ destructor TCalc.Destroy;
 begin
   FSource.Free;
   inherited Destroy;
+end;
+
+function TCalc.EvalText(const text: string; out v: TValue): Boolean;
+var
+  t: string;
+  f: TFormula;
+  pos: Integer;
+  d: Double;
+begin
+  Result := False;
+  v := EmptyValue;
+  t := Trim(text);
+  if t = '' then exit;
+  if IsNumberLiteral(t, d) then
+  begin
+    v := NumValue(d);
+    exit(True);
+  end;
+  if not (t[1] in ValueStarts) then t := '+' + t;
+  if CompileFormula(t, f, pos) then
+  begin
+    try
+      v := EvalFormula(f);
+      Result := True;
+    finally
+      f.Free;
+    end;
+  end;
 end;
 
 function TCalc.EvalFormula(f: TFormula): TValue;
