@@ -173,3 +173,21 @@ program:
   nothing.
 - Keys typed by the user during `{?}` go to the worksheet exactly as typed.
 - Changes made directly by macro commands are not undoable.
+
+## Observed: the macro worksheet (MACROS.WK1) run in the original program
+33 of 35 automatic tests agreed on the first run; the two differences were
+`{CONTENTS}` and led to two display rules:
+- Positive numbers in Currency and Comma formats keep one column free on the
+  right for the closing parenthesis that negatives have (`$1,234.50` needs 10
+  columns, so in a 9-wide column it shows as `*********`).  Percent and the
+  other formats do not.
+- `{CONTENTS dest,source[,width]}` stores the number as displayed in the source
+  column's width (or the width given): right-aligned, padded with spaces, with
+  that trailing space, or all stars when it does not fit.
+Confirmed by that run: keystroke macros, `{EDIT}`, `{ESC}`, `{BS}`, `{IF}`
+(false skips the rest of the cell), `{BRANCH}`, subroutines and `{RETURN}`,
+`{FOR}` (counter ends past the limit), `{FORBREAK}`, `{LET}` (number, string,
+`:string`, cell formula, bare word = text), `{PUT}`, `{BLANK}`, escaped braces and
+tilde, a number cell ending a macro, text formulas as macro lines, `{QUIT}`,
+`{DEFINE}`, menu keystrokes and `{BEEP}`.  Still to be checked by hand:
+`{?}`, `{GETLABEL}`, `{GETNUMBER}`, `{MENUBRANCH}`, `{GET}`, STEP and LEARN.

@@ -223,12 +223,14 @@ begin
     fkCurrency:
       begin
         Result := '$' + FixedAbs(d, f.Dec, True);
-        if d < 0 then Result := '(' + Result + ')';
+        if d < 0 then Result := '(' + Result + ')'
+        else Result := Result + ' ';          { room for the ) that negatives have (observed) }
       end;
     fkComma:
       begin
         Result := FixedAbs(d, f.Dec, True);
-        if d < 0 then Result := '(' + Result + ')';
+        if d < 0 then Result := '(' + Result + ')'
+        else Result := Result + ' ';
       end;
     fkPercent:
       begin

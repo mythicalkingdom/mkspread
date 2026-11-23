@@ -161,12 +161,12 @@ begin
 
   c.Fmt := MakeFormat(fkCurrency, 2);
   c.Raw := '1234567.891';
-  CheckStr(ValueText(c, sh, 20), '$1,234,567.89', 'currency commas');
+  CheckStr(ValueText(c, sh, 20), '$1,234,567.89 ', 'currency commas (positive numbers keep room for the closing parenthesis)');
   c.Raw := '-5';
   CheckStr(ValueText(c, sh, 20), '($5.00)', 'currency negative');
   c.SetRaw('@SUM(A1..A3)');
   c.Val := NumValue(10.99);
-  CheckStr(ValueText(c, sh, 20), '$10.99', 'formula value is formatted');
+  CheckStr(ValueText(c, sh, 20), '$10.99 ', 'formula value is formatted');
   c.SetRaw('1');
 
   c.Raw := '1234.5';
@@ -175,7 +175,7 @@ begin
   c.Fmt := MakeFormat(fkFixed, 3);
   CheckStr(ValueText(c, sh, 20), '1234.500', 'fixed 3');
   c.Fmt := MakeFormat(fkComma, 1);
-  CheckStr(ValueText(c, sh, 20), '1,234.5', 'comma 1');
+  CheckStr(ValueText(c, sh, 20), '1,234.5 ', 'comma 1');
   c.Fmt := MakeFormat(fkSci, 2);
   CheckStr(ValueText(c, sh, 20), '1.23E+03', 'sci 2');
   c.Raw := '0.00012';
@@ -1618,9 +1618,20 @@ begin
   Mac(1, '{PUT B1,0,1,99}{CONTENTS C1,B2}{BLANK B1}');
   NameMac('\A', 1);
   RunMac('\A');
-  CheckStr(RawAt(MS, 1, 3), '''99', '{CONTENTS} copies the displayed text (after the {PUT})');
+  CheckStr(RawAt(MS, 1, 3), '''       99', '{CONTENTS} copies the number as displayed, padded to the column width');
   CheckStr(RawAt(MS, 1, 2), '', '{BLANK} empties the cell');
   CheckStr(RawAt(MS, 2, 2), '99', '{PUT} stored at an offset');
+
+  { {CONTENTS} width and stars (observed in the original program) }
+  NewMacroSession;
+  MS.Sheet.Put(1, 2, '5').Fmt := MakeFormat(fkCurrency, 2);
+  MS.Sheet.Put(2, 2, '1234.5').Fmt := MakeFormat(fkCurrency, 2);
+  Mac(1, '{CONTENTS C1,B1}{CONTENTS C2,B2}{CONTENTS C3,B2,12}');
+  NameMac('\A', 1);
+  RunMac('\A');
+  CheckStr(RawAt(MS, 1, 3), '''   $5.00 ', 'positive currency: padded, with a trailing space');
+  CheckStr(RawAt(MS, 2, 3), '''*********', 'too wide for the column: stars');
+  CheckStr(RawAt(MS, 3, 3), '''  $1,234.50 ', 'a third argument sets the width');
 
   { subroutines, with arguments }
   NewMacroSession;

@@ -645,12 +645,20 @@ begin
       if (args.Count >= 2) and Loc(args[0], r, c) and Loc(args[1], r1, c1) then
       begin
         cell := FS.Sheet.Find(r1, c1);
+        { the width the cell is shown in: the source column's, or the third argument }
+        n := FS.Sheet.ColWidth(c1);
+        if (args.Count >= 3) and EvalNum(args[2], d) and (d >= 1) and (d <= 240) then n := Trunc(d);
         if cell = nil then t := ''
         else if TextOf(cell, ch, t) then
           { the text itself }
         else
-          t := ValueText(cell, FS.Sheet, 40);
-        StoreLabel(r, c, Trim(t));
+        begin
+          { a number as displayed: right-aligned in the width, stars if it does not fit }
+          t := ValueText(cell, FS.Sheet, n);
+          if Length(t) > n then t := StringOfChar('*', n)
+          else t := StringOfChar(' ', n - Length(t)) + t;
+        end;
+        StoreLabel(r, c, t);
       end;
       exit(False);
     end;

@@ -42,10 +42,10 @@ expect = {
     5: "1         Variable Costs/Unit                           Fixed Costs",
     6: "2    Description            Cost/Unit         Description",
     7: "3    ================================         ========================",
-    8: "4    Materials                  $3.26         Plant Operation",
-    12: "8    Freight                    $0.32         Research & Development",
+    8: "4    Materials                 $3.26          Plant Operation",
+    12: "8    Freight                   $0.32          Research & Development",
     13: "9                           ---------",
-    14: "10   Total                     $10.99",
+    14: "10   Total                    $10.99",
 }
 for n, text in expect.items():
     got = s.line(n)
@@ -114,7 +114,7 @@ s.close()
 
 # ---- phase 3: formats, EDIT, POINT, widths, undo ----
 s = run()
-s.send('1234.5\r')
+s.send('123.5\r')
 s.send('/rfc', 0.4)
 check(s.line(1).endswith('EDIT') and 'Enter number of decimal places (0..15): 2' in s.line(2), 'decimal places prompt', s.line(2))
 s.send('\r')
@@ -123,18 +123,18 @@ s.send('.\x1b[B')
 check(s.line(2).startswith('Enter range to format: A1..A2'), 'range grows with arrows', s.line(2))
 check(s.screen.cyan(4)[4:13] == '#########' and s.screen.cyan(5)[4:13] == '#########', 'range highlighted')
 s.send('\r')
-check(s.line(5).rstrip().endswith('$1,234.50'), 'currency applied', s.line(5))
-check(s.line(1).startswith('A1: (C2) 1234.5'), 'status line shows format tag', s.line(1))
+check(s.line(5).rstrip().endswith('$123.50'), 'currency applied', s.line(5))
+check(s.line(1).startswith('A1: (C2) 123.5'), 'status line shows format tag', s.line(1))
 check('UNDO' in s.line(25), 'UNDO indicator', s.line(25))
 s.send('\x15')
-check(s.line(5).rstrip().endswith('1234.5') and '$' not in s.line(5), 'Ctrl-U undoes the format', s.line(5))
+check(s.line(5).rstrip().endswith('123.5') and '$' not in s.line(5), 'Ctrl-U undoes the format', s.line(5))
 # EDIT mode
 s.send('\x1bOQ')   # F2
-check(s.line(1).endswith('EDIT') and s.line(2).startswith('1234.5'), 'F2 edit mode', s.line(2))
+check(s.line(1).endswith('EDIT') and s.line(2).startswith('123.5'), 'F2 edit mode', s.line(2))
 s.send('\x1b[D\x1b[D9')
-check(s.line(2).startswith('12349.5'), 'edit inserts at cursor', s.line(2))
+check(s.line(2).startswith('1239.5'), 'edit inserts at cursor', s.line(2))
 s.send('\r')
-check(s.line(5).rstrip().endswith('12349.5'), 'edit committed', s.line(5))
+check(s.line(5).rstrip().endswith('1239.5'), 'edit committed', s.line(5))
 # column width with live preview
 s.send('/wcs')
 s.send('\x1b[C\x1b[C\x1b[C')
