@@ -360,6 +360,12 @@ begin
   last := Row - 1;
   FinishTests(6, last);
   S.Sheet.Put(3, 1, Format('@SUM(A6..A%d)', [last]));
+  { Alt-D: a macro that lists the rows that differ, in Y7 down }
+  S.Sheet.Put(4, 1, '''Alt-D lists the rows that differ (row, test) from Y7 down');
+  S.Sheet.Put(1, 19, '''{LET U1,0}{FOR U2,7,' + IntToStr(last) + ',1,DCHK}{GOTO}Y7~');
+  S.Sheet.Put(3, 19, Format('''{IF @INDEX(A7..A%d,0,U2-7)=1}{LET U1,U1+1}{PUT Y7..Z300,0,U1-1,U2}{PUT Y7..Z300,1,U1-1,@INDEX(E7..E%d,0,U2-7)}', [last, last]));
+  S.Sheet.SetName('\D', NormRange(1, 19, 1, 19));
+  S.Sheet.SetName('DCHK', NormRange(3, 19, 3, 19));
   if Only = 0 then Display(last + 3);
   S.Calc.Recalc;
   w := TStringList.Create;

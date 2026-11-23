@@ -4,8 +4,8 @@
   Open it in 1-2-3, press Alt-R (macro \R, which runs every test), then F9 if
   recalculation is manual, and read the total of differences in A3.  A row with
   a 1 in column A shows a test where the original program did something
-  different from mkspread.  Each test can also be run alone (Alt-F3, then pick
-  TSTnn).  The test macros are in column S, the by-hand macros in column U, the scratch cells they write to are
+  different from mkspread.  Alt-D lists the differing rows (from Y7 down).  Each test can also be
+  run alone with Alt-F3 and TSTnn, if your keyboard passes Alt-F3 through.  The test macros are in column S, the by-hand macros in column U, the scratch cells they write to are
   H..Q on the test's own row.
 
   The "expected" column is what mkspread's interpreter produced when this
@@ -220,15 +220,15 @@ procedure Manual(S: TSession; r: Integer);
 begin
   Inc(r);
   L('--- Try by hand (not checked automatically) ---');
-  L('{?}: Alt-F3 pick MAN1. It should stop; type abc, Enter: done');
+  L('{?}: press Alt-Q. It stops; type abc, Enter: done');
   L('   appears in the cell the macro moved to (H400), after abc.');
-  L('{GETLABEL}: Alt-F3 pick MAN2; answer Ann: label Ann in H401.');
-  L('{GETNUMBER}: Alt-F3 pick MAN3; answer 2+3: 5 in H402.');
-  L('{MENUBRANCH}: Alt-F3 pick MAN4; choose One or Two (letter or');
+  L('{GETLABEL}: Alt-W; answer Ann: label Ann in H401.');
+  L('{GETNUMBER}: Alt-E; answer 2+3: 5 in H402.');
+  L('{MENUBRANCH}: Alt-T; choose One or Two (letter or');
   L('   arrows+Enter): it types 1 or 2 in H403; Esc ends the macro.');
-  L('{GET}: Alt-F3 pick MAN5; press a key: that key is stored in H404');
+  L('{GET}: Alt-Y; press a key: that key is stored in H404');
   L('   as a label and is not typed into the sheet.');
-  L('STEP: press Alt-F2, run macro \R or MAN6: it should wait for a key');
+  L('STEP: press Alt-F2, then Alt-U: it should wait for a key');
   L('   before each keystroke. Alt-F2 again lets it run on.');
   L('LEARN: /Worksheet Learn Range U500..U510, Alt-F5, type some keys,');
   L('   Alt-F5: the keystrokes appear as macro text in U500.');
@@ -301,6 +301,11 @@ begin
   Build(S2, True, S1);
   S2.Sheet.Put(3, 1, Format('@SUM(A%d..A%d)', [FirstRow, last]));
   Manual(S2, last + 2);
+  S2.Sheet.Put(4, 1, '''Alt-D lists the rows that differ (row, test) from Y7 down');
+  S2.Sheet.Put(1, 23, '''{LET X1,0}{FOR X2,7,' + IntToStr(last) + ',1,DCHK}{GOTO}Y7~');
+  S2.Sheet.Put(3, 23, Format('''{IF @INDEX(A7..A%d,0,X2-7)=1}{LET X1,X1+1}{PUT Y7..Z300,0,X1-1,X2}{PUT Y7..Z300,1,X1-1,@INDEX(E7..E%d,0,X2-7)}', [last, last]));
+  S2.Sheet.SetName('\D', NormRange(1, 23, 1, 23));
+  S2.Sheet.SetName('DCHK', NormRange(3, 23, 3, 23));
   S2.Calc.Recalc;
   w := TStringList.Create;
   FillChar(info, SizeOf(info), 0);
