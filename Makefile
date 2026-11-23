@@ -50,4 +50,11 @@ clean:
 	rm -f build/*
 	touch build/.gitkeep
 
-.PHONY: all run demo test testsheet macrosheet datasheet clean
+.PHONY: all run demo test testsheet macrosheet datasheet printsheet clean
+
+build/make_printsheet: $(SRCS) tests/make_printsheet.pas
+	$(FPC) $(FLAGS) tests/make_printsheet.pas
+
+printsheet: build/make_printsheet
+	mkdir -p private-samples
+	./build/make_printsheet private-samples/PRINT.WK1 private-samples/printexp

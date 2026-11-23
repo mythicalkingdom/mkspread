@@ -29,3 +29,9 @@ stays open: Range, Line, Page, Options, Clear, Align, Go, Quit.  The text made b
 The settings are kept while the program runs but are not saved in worksheet files.
 Not done: Line/Page/Align do not track the printer position exactly; Go always
 finishes the last page including its footer.
+
+## Checking against the original program
+`make printsheet` writes `private-samples/PRINT.WK1` (13 print jobs, macro `\R`) and
+the `.PRN` files mkspread makes for the same keystrokes in `private-samples/printexp/`.
+Run `\R` in the original program (delete old `P*.PRN` first), copy its files to a
+folder, then `python3 tests/cmp_print.py private-samples/printexp <folder>`.
