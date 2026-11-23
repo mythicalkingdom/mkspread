@@ -56,7 +56,17 @@ function ParseLabels(sh: TSheet; const input: TRange; toR, toC: Integer): string
 
 implementation
 
-uses SysUtils, Math, formula, cellfmt, editops, fn_fin, fn_time;
+uses SysUtils, Math, formula, cellfmt, editops, fn_fin, fn_time, dates;
+
+{ a field as a number: thousands separators dropped, the chosen decimal separator read as a point }
+function LocalNumber(const s: string; out d: Double): Boolean;
+var
+  t: string;
+begin
+  t := StringReplace(Trim(s), Intl.Thousands, '', [rfReplaceAll]);
+  if Intl.Decimal <> '.' then t := StringReplace(t, Intl.Decimal, '.', [rfReplaceAll]);
+  Result := IsNumberLiteral(t, d);
+end;
 
 { ------------------------------------------------------------------ fill }
 
@@ -621,7 +631,7 @@ begin
     j := i;
     while (j <= Length(sample)) and (sample[j] <> ' ') do Inc(j);
     token := Copy(sample, i, j - i);
-    if IsNumberLiteral(StringReplace(token, ',', '', [rfReplaceAll]), d) then Result := Result + 'V'
+    if LocalNumber(token, d) then Result := Result + 'V'
     else Result := Result + 'L';
     Result := Result + StringOfChar('>', Length(token) - 1);
     i := j;
@@ -676,7 +686,7 @@ begin
       if fld <> '' then
         case UpCase(fmt[s]) of
           'V':
-            if IsNumberLiteral(StringReplace(fld, ',', '', [rfReplaceAll]), d) then
+            if LocalNumber(fld, d) then
               sh.Put(outRow, col, NumToRaw(d))
             else
               sh.Put(outRow, col, sh.GlobalLabelPrefix + fld);

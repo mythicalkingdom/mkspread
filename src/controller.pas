@@ -69,7 +69,7 @@ type
 
 implementation
 
-uses keys, cellfmt, formula, menutree, u8edit, cmdfile, cmddata, cmdprint, cmddefault, helpdata, refedit, Classes, Math, SysUtils;
+uses keys, cellfmt, formula, localenum, dates, menutree, u8edit, cmdfile, cmddata, cmdprint, cmddefault, helpdata, refedit, Classes, Math, SysUtils;
 
 { Alt-F3 picked a range name: start it as a macro }
 procedure RunNameChosen(S: TSession; const path: string);
@@ -222,6 +222,7 @@ var
 begin
   cell := FS.Sheet.Find(FS.CurRow, FS.CurCol);
   if (cell <> nil) then FS.Entry := cell.Raw else FS.Entry := '';
+  if (FS.Entry <> '') and (FS.Entry[1] in ValueStarts) then FS.Entry := CanonicalToLocal(FS.Entry);
   FS.EditPos := U8Len(FS.Entry);
   FS.Mode := mEdit;
 end;
@@ -257,7 +258,7 @@ begin
     kBreak, kEsc, kBackspace: ;
     32..126, 128..kSpecialBase - 1:
       begin
-        if (k < 127) and (Chr(k) in ValueStarts) then
+        if (k < 127) and StartsNumber(Chr(k)) then
           FS.Mode := mValue
         else
           FS.Mode := mLabel;
@@ -290,6 +291,7 @@ begin
   FS.Mode := mReady;
   if text = '' then exit;
   raw := text;
+  if not (raw[1] in LabelPrefixes) and StartsNumber(raw[1]) then raw := LocalToCanonical(raw);
   if raw[1] in LabelPrefixes then
     { label as typed }
   else if raw[1] in ValueStarts then

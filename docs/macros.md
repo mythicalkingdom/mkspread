@@ -37,6 +37,15 @@ tilde.  `{?}` pauses until the user presses Enter; that Enter only resumes the m
 | `{GET loc}` `{LOOK loc}` | wait for one key / peek (always empty) |
 | `{RECALC}` `{RECALCCOL}` | recalculate |
 | `{INDICATE text}` | replace the mode indicator |
+| `{OPEN file,mode}` | open a text file: `R` read, `W` create/replace, `M` read and write an existing file, `A` append to an existing file; one file at a time, it stays open until `{CLOSE}` |
+| `{CLOSE}` | close the file |
+| `{READ n,loc}` `{READLN loc}` | read n bytes / a line into a label |
+| `{WRITE text}` `{WRITELN text}` | write text (WRITELN adds a line end, CR LF) |
+| `{FILESIZE loc}` `{GETPOS loc}` `{SETPOS n}` | size of the file, the position (from 0), set the position |
+
+A file command that fails (file not found, end of file, no file open, wrong mode) skips
+the rest of its cell, and the macro goes on in the next cell, as `{IF}` does when false.
+Text is written and read in the original character set.
 | `{BEEP}` `{WAIT}` `{PANELOFF}` `{PANELON}` `{WINDOWSOFF}` `{WINDOWSON}` `{BREAKOFF}` `{BREAKON}` `{ONERROR}` | accepted, no effect |
 
 ## Recording (LEARN) and STEP
@@ -53,6 +62,5 @@ tilde.  `{?}` pauses until the user presses Enter; that Enter only resumes the m
   at the position; any key steps (the key itself is not typed).  Alt-F2 during a
   step switches STEP off and the macro runs on.
 
-Not implemented: the file commands (`{OPEN}`, `{READ}`, `{WRITE}` ...),
-`{SYSTEM}`, `{DISPATCH}`, `{GETPOS}`/`{SETPOS}`, `{FILESIZE}`.  An unknown command ends the macro with a message.
+Not implemented: `{SYSTEM}`, `{DISPATCH}`.  An unknown command ends the macro with a message.
 A macro that branches in a loop without typing anything is stopped.

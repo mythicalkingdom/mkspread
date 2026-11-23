@@ -3,7 +3,7 @@
 program test_core;
 {$mode objfpc}{$H+}
 
-uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata, refedit, printing, cmdprint, config, recovery, version, defaults;
+uses SysUtils, Classes, Math, fn_time, macro, cmdfile, dataops, keys, editops, charsets, wk1, textimport, formula, sheet, cellfmt, dates, menutree, menudata, session, commands, controller, helpdata, refedit, printing, cmdprint, config, recovery, version, defaults, localenum;
 
 var
   Fails, Total: Integer;
@@ -1905,6 +1905,43 @@ begin
     CheckStr(MS.MacroRequest, '\0', 'retrieving a file with \0 requests it');
     MM.RunSync(MC);
     CheckStr(RawAt(MS, 2, 1), '''auto', 'the autoexec macro ran');
+    { file commands }
+    NewMacroSession;
+    Mac(1, '{OPEN "t.txt",W}{WRITELN "hello"}{WRITE "ab"}{WRITE 12}{CLOSE}');
+    NameMac('\A', 1);
+    RunMac('\A');
+    Check(FileExists('t.txt'), '{OPEN} W creates the file');
+    Mac(1, '{OPEN "t.txt",R}{READLN B1}{READ 2,B2}{READ 2,B3}{FILESIZE B4}{GETPOS B5}{SETPOS 1}{READ 3,B6}{CLOSE}');
+    RunMac('\A');
+    CheckStr(RawAt(MS, 1, 2), '''hello', '{READLN} reads a line');
+    CheckStr(RawAt(MS, 2, 2), '''ab', '{READ} reads bytes');
+    CheckStr(RawAt(MS, 3, 2), '''12', 'and the next ones');
+    CheckStr(RawAt(MS, 4, 2), '11', '{FILESIZE}: hello, CRLF, ab12');
+    CheckStr(RawAt(MS, 5, 2), '11', '{GETPOS}');
+    CheckStr(RawAt(MS, 6, 2), '''ell', '{SETPOS} then {READ}');
+    { a failed command skips the rest of its cell }
+    NewMacroSession;
+    Mac(1, '{OPEN "nothere.txt",R}{LET B1,1}');
+    Mac(2, '{LET B2,2}');
+    NameMac('\A', 1);
+    RunMac('\A');
+    Check(MS.Sheet.Find(1, 2) = nil, 'after a failed {OPEN} the rest of the cell is skipped');
+    CheckStr(RawAt(MS, 2, 2), '2', 'and the macro goes on in the next cell');
+    NewMacroSession;
+    Mac(1, '{OPEN "t.txt",R}{SETPOS 11}{READLN B1}{LET B2,1}');
+    Mac(2, '{LET B3,3}{CLOSE}{WRITE "x"}{LET B4,4}');
+    Mac(3, '{LET B5,5}');
+    NameMac('\A', 1);
+    RunMac('\A');
+    Check(MS.Sheet.Find(2, 2) = nil, 'reading at the end of the file fails');
+    CheckStr(RawAt(MS, 3, 2), '3', 'the next cell runs');
+    Check(MS.Sheet.Find(4, 2) = nil, '{WRITE} with no file open fails');
+    CheckStr(RawAt(MS, 5, 2), '5', 'and the macro continues below');
+    NewMacroSession;
+    Mac(1, '{OPEN "t.txt",A}{WRITELN "!"}{CLOSE}{OPEN "t.txt",R}{FILESIZE B1}{CLOSE}');
+    NameMac('\A', 1);
+    RunMac('\A');
+    CheckStr(RawAt(MS, 1, 2), '14', '{OPEN} A appends');
   finally
     SetCurrentDir(old);
     CleanDir(dir);
@@ -3345,6 +3382,89 @@ begin
   ApplyConfig(cfg);
 end;
 
+procedure TestLocale;
+var
+  cfg: TConfig;
+  S: TSession;
+  Cmds: TCommands;
+  Ctl: TController;
+  q: TKeyQueue;
+  sh: TSheet;
+  dir, old, msg: string;
+  sl: TStringList;
+
+  function RawAt2(s2: TSheet; r, c: Integer): string;
+  begin
+    if s2.Find(r, c) = nil then Result := '(empty)' else Result := s2.Find(r, c).Raw;
+  end;
+
+  procedure Go(const keys: string);
+  begin
+    q.PushString(keys);
+    while not q.Empty do Ctl.HandleKey(q.Pop);
+  end;
+
+begin
+  DefaultConfig(cfg);
+  cfg.Punctuation := 1;                                  { B: decimal comma, arguments by point }
+  ApplyConfig(cfg);
+  CheckStr(LocalToCanonical('@SUM(A1..B2;3,5)'), '@SUM(A1..B2;3.5)', 'B: the range operator stays, ; is not special');
+  CheckStr(LocalToCanonical('@ROUND(1,5.2)'), '@ROUND(1.5,2)', 'B: comma is the decimal point, point the argument separator');
+  CheckStr(CanonicalToLocal('@ROUND(1.5,2)'), '@ROUND(1,5.2)', 'and back');
+  CheckStr(LocalToCanonical('+"a,b"'), '+"a,b"', 'text in quotes is left alone');
+  CheckStr(LocalToCanonical('+A1..B2'), '+A1..B2', 'ranges are the same');
+  cfg.Punctuation := 4;                                  { E: arguments by semicolon }
+  ApplyConfig(cfg);
+  CheckStr(LocalToCanonical('@SUM(A1;B1)'), '@SUM(A1,B1)', 'E: semicolon separates arguments');
+  CheckStr(CanonicalToLocal('@SUM(A1,B1)'), '@SUM(A1;B1)', 'and back');
+  cfg.Punctuation := 7;                                  { H }
+  ApplyConfig(cfg);
+  CheckStr(LocalToCanonical('@IF(A1>0,5;1,5)'), '@IF(A1>0.5,1.5)', 'H: both');
+  cfg.Punctuation := 1;
+  ApplyConfig(cfg);
+  S := TSession.Create;
+  Cmds := TCommands.Create;
+  RegisterCoreCommands(Cmds);
+  Ctl := TController.Create(S, Cmds);
+  q := TKeyQueue.Create;
+  Go('1,5'#13);
+  CheckStr(RawAt(S, 1, 1), '1.5', 'typing 1,5 stores 1.5');
+  Ctl.HandleKey(kUp);
+  Go(',25'#13);
+  CheckStr(RawAt(S, 1, 1), '0.25', 'a number may start with the decimal comma');
+  Ctl.HandleKey(kDown);
+  Go('@ROUND(A1.2)'#13);
+  CheckStr(RawAt(S, 2, 1), '@ROUND(A1,2)', 'a formula typed with the locale arguments');
+  Ctl.HandleKey(kUp);
+  Ctl.HandleKey(kF1 + 1);
+  CheckStr(S.Entry, '0,25', 'F2 shows the number with a decimal comma');
+  Ctl.HandleKey(kEsc);
+  { importing text }
+  dir := TmpDir + '/loc';
+  ForceDirectories(dir);
+  old := GetCurrentDir;
+  SetCurrentDir(dir);
+  try
+    sl := TStringList.Create;
+    sl.Add('name;1,5;"x";3');
+    sl.Add('b;2,25;;4');
+    sl.SaveToFile('t.csv');
+    sl.Free;
+    sh := TSheet.Create;
+    msg := ImportNumbers(sh, 't.csv', 1, 1);
+    CheckStr(msg, '', 'import with semicolons');
+    CheckStr(RawAt2(sh, 1, 2), '1.5', 'a decimal comma in an imported field');
+    CheckStr(RawAt2(sh, 2, 2), '2.25', 'in another');
+    CheckStr(RawAt2(sh, 2, 4), '4', 'a plain number');
+    sh.Free;
+  finally
+    SetCurrentDir(old);
+  end;
+  DefaultConfig(cfg);
+  ApplyConfig(cfg);
+  CheckStr(LocalToCanonical('@SUM(A1,B1)'), '@SUM(A1,B1)', 'the default punctuation changes nothing');
+end;
+
 procedure TestRefEdit;
 var
   s: string;
@@ -3475,6 +3595,7 @@ begin
   TestPrintFile;
   TestRecovery;
   TestDefaults;
+  TestLocale;
   WriteLn(Total - Fails, '/', Total, ' checks passed');
   if Fails > 0 then Halt(1);
 end.

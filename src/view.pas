@@ -32,7 +32,7 @@ type
 
 implementation
 
-uses terminal, sheet, cellfmt, menutree, u8edit, helpdata, dates, DateUtils, Classes, SysUtils;
+uses terminal, sheet, cellfmt, menutree, u8edit, helpdata, localenum, dates, DateUtils, Classes, SysUtils;
 
 const
   MinW = 80;
@@ -339,7 +339,8 @@ begin
   cell := S.Sheet.Find(S.CurRow, S.CurCol);
   if (cell <> nil) and not cell.Fmt.UseGlobal then st := st + ' (' + FormatTag(cell.Fmt) + ')';
   if S.Sheet.ColWidthIsSet(S.CurCol) then st := st + ' [W' + IntToStr(S.Sheet.ColWidth(S.CurCol)) + ']';
-  if cell <> nil then st := st + ' ' + cell.Raw;
+  if (cell <> nil) and (cell.Raw <> '') and (cell.Raw[1] in ValueStarts) then st := st + ' ' + CanonicalToLocal(cell.Raw)
+  else if cell <> nil then st := st + ' ' + cell.Raw;
   case S.Mode of
     mReady: mname := 'READY';
     mLabel: mname := 'LABEL';

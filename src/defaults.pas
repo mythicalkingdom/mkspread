@@ -24,7 +24,7 @@ procedure ApplyConfig(const cfg: TConfig);
 var
   a: Char;
 begin
-  PunctuationChars(cfg.Punctuation, Intl.Decimal, Intl.Thousands, a);
+  PunctuationChars(cfg.Punctuation, Intl.Decimal, Intl.Thousands, Intl.ArgSep);
   Intl.CurrencySym := cfg.CurrencySym;
   Intl.CurrencyAfter := cfg.CurrencyAfter;
   Intl.NegParen := cfg.NegParen;

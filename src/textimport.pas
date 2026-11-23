@@ -39,7 +39,23 @@ procedure SplitCsv(const line: string; fields: TStrings);
 
 implementation
 
-uses SysUtils, charsets, formula;
+uses SysUtils, charsets, formula, dates;
+
+{ comma separated fields, or semicolons when the decimal separator is a comma }
+function FieldSeparator: Char;
+begin
+  if Intl.Decimal = ',' then Result := ';' else Result := ',';
+end;
+
+{ a field as a number: the decimal separator of the chosen punctuation is accepted }
+function FieldNumber(const s: string; out d: Double): Boolean;
+var
+  t: string;
+begin
+  t := Trim(s);
+  if Intl.Decimal <> '.' then t := StringReplace(t, Intl.Decimal, '.', []);
+  Result := IsNumberLiteral(t, d);
+end;
 
 function ReadTextLines(const fn: string; lines: TStrings): string;
 var
@@ -139,7 +155,7 @@ begin
       inQ := True;
       wasQ := True;
     end
-    else if line[i] = ',' then
+    else if line[i] = FieldSeparator then
     begin
       if wasQ then fields.AddObject(cur, TObject(1)) else fields.AddObject(cur, nil);
       cur := '';
@@ -154,7 +170,7 @@ end;
 
 function LooksNumeric(const s: string; out d: Double): Boolean;
 begin
-  Result := IsNumberLiteral(Trim(s), d);
+  Result := FieldNumber(s, d);
 end;
 
 procedure PutField(sh: TSheet; r, c: Integer; const s: string; quoted: Boolean);
@@ -219,7 +235,7 @@ begin
     k := 1;
     while k <= Length(t) do
     begin
-      if t[k] in [' ', #9, ','] then begin Inc(k); continue; end;
+      if t[k] in [' ', #9, FieldSeparator] then begin Inc(k); continue; end;
       if t[k] in ['"', ''''] then
       begin
         q := t[k];
@@ -237,12 +253,12 @@ begin
       else
       begin
         f := '';
-        while (k <= Length(t)) and not (t[k] in [' ', #9, ',']) do
+        while (k <= Length(t)) and not (t[k] in [' ', #9, FieldSeparator]) do
         begin
           f := f + t[k];
           Inc(k);
         end;
-        if IsNumberLiteral(f, d) then
+        if FieldNumber(f, d) then
         begin
           if toC + col <= MaxCol then sh.Put(toR + i, toC + col, NumToRaw(d));
           Inc(col);

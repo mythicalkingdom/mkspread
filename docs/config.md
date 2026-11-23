@@ -32,6 +32,16 @@
 Numbers are still typed with a decimal point; the punctuation only changes how
 they are shown.
 
+## Punctuation in typed numbers and text files
+With a Punctuation other than A (for example B, a comma as the decimal point), numbers
+and formulas are **typed** in that punctuation: `1,5`, and `@ROUND(A1.2)` where the point
+separates arguments (E to H use a semicolon).  They are shown that way when edited (F2)
+and on the status line.  Inside the program and in `.WK1` files they are stored with a
+decimal point and commas, so files are the same everywhere.  A range is always `A1..B2`.
+Text import (`/File Import Numbers`, CSV) and `/Data Parse` read the decimal separator
+of the chosen punctuation, and with a decimal comma the fields of a `.CSV` file are
+separated by semicolons.
+
 ## Quitting
 `/Quit Yes` asks once more when the worksheet has changes that are not in a file.
 

@@ -56,6 +56,7 @@ type
     FRow, FCol, FPos: Integer;     { current cell and byte position in its text }
     FLine: string;
     FHaveLine: Boolean;
+
     FJumpPos: Integer;             { position to use when the next line loads }
     FFrames: array of TFrame;
     FRepeatKey, FRepeatLeft: Integer;
@@ -66,6 +67,10 @@ type
     FMenuDone, FMenuChosen: Boolean;
     FPromptDone: Boolean;
     FStepWait, FStepOK: Boolean;
+    FFile: TFileStream;            { the file {OPEN} opened, if any }
+    FFileMode: Char;               { R, W, M or A }
+    procedure CloseMacroFile;
+    function FileText(const arg: string): string;
     function LoadLine: Boolean;
     procedure Jump(r, c, pos: Integer);
     procedure PushFrame(isFor: Boolean; const args: array of string);
@@ -101,7 +106,7 @@ type
 
 implementation
 
-uses keys, cellfmt, calc, u8edit;
+uses keys, cellfmt, calc, u8edit, charsets;
 
 var
   Current: TMacro;          { the macro whose prompt callbacks are pending }
@@ -125,8 +130,29 @@ end;
 
 destructor TMacro.Destroy;
 begin
+  CloseMacroFile;
   if Current = Self then Current := nil;
   inherited Destroy;
+end;
+
+function Unquote(const s: string): string; forward;
+
+procedure TMacro.CloseMacroFile;
+begin
+  FreeAndNil(FFile);
+end;
+
+{ the text an argument stands for: a string expression, or the argument itself when it is not one }
+function TMacro.FileText(const arg: string): string;
+var
+  v: TValue;
+begin
+  if Eval(arg, v) then
+    case v.Kind of
+      vkStr: exit(v.Str);
+      vkNum: exit(NumToRaw(v.Num));
+    end;
+  Result := Unquote(arg);
 end;
 
 { ------------------------------------------------------------------ state }
@@ -449,6 +475,7 @@ var
   t: string;
   items: TStringList;
   ch: Char;
+  ok: Boolean;
 begin
   Result := False;
   key := kNone;
@@ -689,6 +716,112 @@ begin
         FLoc := NormRange(r, c, r, c);
         FWait := wGet;
       end;
+      exit(False);
+    end;
+    { ---- file commands: when one fails the rest of its cell is skipped ---- }
+    if nm = 'OPEN' then
+    begin
+      CloseMacroFile;
+      ok := False;
+      if args.Count >= 2 then
+      begin
+        t := FileText(args[0]);
+        ch := UpCase(FileText(args[1] + ' ')[1]);
+        try
+          case ch of
+            'R': if FileExists(t) then begin FFile := TFileStream.Create(t, fmOpenRead or fmShareDenyNone); ok := True; end;
+            'W': begin FFile := TFileStream.Create(t, fmCreate); ok := True; end;
+            'M': if FileExists(t) then begin FFile := TFileStream.Create(t, fmOpenReadWrite or fmShareDenyNone); ok := True; end;
+            'A': if FileExists(t) then
+                 begin
+                   FFile := TFileStream.Create(t, fmOpenReadWrite or fmShareDenyNone);
+                   FFile.Seek(0, soEnd);
+                   ok := True;
+                 end;
+          end;
+        except
+          FreeAndNil(FFile);
+          ok := False;
+        end;
+        FFileMode := ch;
+      end;
+      if not ok then FPos := Length(FLine) + 1;
+      exit(False);
+    end;
+    if nm = 'CLOSE' then
+    begin
+      CloseMacroFile;
+      exit(False);
+    end;
+    if (nm = 'READ') or (nm = 'READLN') then
+    begin
+      ok := False;
+      if (FFile <> nil) and (FFileMode <> 'W') then
+      begin
+        if nm = 'READ' then
+        begin
+          if (args.Count >= 2) and EvalNum(args[0], d) and (d >= 1) and (d <= 240) and Loc(args[1], r, c) then
+          begin
+            SetLength(t, Trunc(d));
+            n := FFile.Read(t[1], Length(t));
+            if n > 0 then
+            begin
+              SetLength(t, n);
+              StoreLabel(r, c, LicsToUtf8(t));
+              ok := True;
+            end;
+          end;
+        end
+        else if (args.Count >= 1) and Loc(args[0], r, c) then
+        begin
+          t := '';
+          n := 0;
+          while FFile.Read(ch, 1) = 1 do
+          begin
+            Inc(n);
+            if ch = #10 then break;
+            if ch <> #13 then t := t + ch;
+          end;
+          if n > 0 then
+          begin
+            StoreLabel(r, c, LicsToUtf8(t));
+            ok := True;
+          end;
+        end;
+      end;
+      if not ok then FPos := Length(FLine) + 1;
+      exit(False);
+    end;
+    if (nm = 'WRITE') or (nm = 'WRITELN') then
+    begin
+      ok := False;
+      if (FFile <> nil) and (FFileMode <> 'R') and (args.Count >= 1) then
+      begin
+        t := Utf8ToLics(FileText(rest));
+        if nm = 'WRITELN' then t := t + #13#10;
+        if t <> '' then FFile.WriteBuffer(t[1], Length(t));
+        ok := True;
+      end;
+      if not ok then FPos := Length(FLine) + 1;
+      exit(False);
+    end;
+    if (nm = 'FILESIZE') or (nm = 'GETPOS') then
+    begin
+      if (FFile <> nil) and (args.Count >= 1) and Loc(args[0], r, c) then
+      begin
+        if nm = 'FILESIZE' then StoreValue(r, c, NumValue(FFile.Size))
+        else StoreValue(r, c, NumValue(FFile.Position));
+      end
+      else
+        FPos := Length(FLine) + 1;
+      exit(False);
+    end;
+    if nm = 'SETPOS' then
+    begin
+      if (FFile <> nil) and (args.Count >= 1) and EvalNum(args[0], d) and (d >= 0) and (d <= FFile.Size) then
+        FFile.Position := Trunc(d)
+      else
+        FPos := Length(FLine) + 1;
       exit(False);
     end;
     if nm = 'LOOK' then

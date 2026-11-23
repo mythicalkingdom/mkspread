@@ -30,6 +30,7 @@ type
   { /Worksheet Global Default Other International }
   TIntl = record
     Decimal, Thousands: Char;       { punctuation in displayed numbers }
+    ArgSep: Char;                   { separates the arguments of a function }
     CurrencySym: string;
     CurrencyAfter: Boolean;         { the symbol follows the number }
     NegParen: Boolean;              { negatives in parentheses (False: a minus sign) }
@@ -101,6 +102,7 @@ procedure ResetIntl;
 begin
   Intl.Decimal := '.';
   Intl.Thousands := ',';
+  Intl.ArgSep := ',';
   Intl.CurrencySym := '$';
   Intl.CurrencyAfter := False;
   Intl.NegParen := True;
