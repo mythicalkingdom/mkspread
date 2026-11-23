@@ -222,7 +222,7 @@ with the original program yet:
 - Regression/Parse output layout, Distribution bin edges, sort order of mixed text/numbers/blanks, Query wildcard/not/formula criteria.
 - Every DATA.WK1 test ends by typing `q7`: the cell holds 7 if a menu was still open, `q7` if not.
 
-## Observed in the original program (DATA.WK1 run, 2024-11-23 session)
+## Observed in the original program (DATA.WK1 run, 2026-11-23)
 - Sort: ascending order is empty cells, then labels (case ignored), then numbers; descending is the exact reverse.
   Equal keys: the original does not keep the original order for numbers (e.g. keys 3,1,3,2,1,3 give rows e b d a c f ascending, a f c d e b descending); not modelled, mkspread keeps the original order.
 - Fill erases the range first; Start/Step/Stop default to the values used last time.
