@@ -220,8 +220,8 @@ procedure Manual(S: TSession; r: Integer);
 begin
   Inc(r);
   L('--- Try by hand (not checked automatically) ---');
-  L('{?}: press Alt-Q. It stops; type abc, Enter: done');
-  L('   appears in the cell the macro moved to (H400), after abc.');
+  L('{?}: press Alt-Q. It stops; type abc, Enter (the Enter is not stored): done');
+  L('   is added after abc in H400 (abcdone).');
   L('{GETLABEL}: Alt-W; answer Ann: label Ann in H401.');
   L('{GETNUMBER}: Alt-E; answer 2+3: 5 in H402.');
   L('{MENUBRANCH}: Alt-T; choose One or Two (letter or');
@@ -235,10 +235,10 @@ begin
   S.Sheet.Put(r + 2, 21, '''{GOTO}H400~{?}done~');
   S.Sheet.SetName('MAN1', NormRange(r + 2, 21, r + 2, 21));
   S.Sheet.SetName('\Q', NormRange(r + 2, 21, r + 2, 21));
-  S.Sheet.Put(r + 4, 21, '''{GETLABEL Name: ,H401}');
+  S.Sheet.Put(r + 4, 21, '''{GETLABEL "Name: ",H401}');
   S.Sheet.SetName('MAN2', NormRange(r + 4, 21, r + 4, 21));
   S.Sheet.SetName('\W', NormRange(r + 4, 21, r + 4, 21));
-  S.Sheet.Put(r + 6, 21, '''{GETNUMBER Qty: ,H402}');
+  S.Sheet.Put(r + 6, 21, '''{GETNUMBER "Qty: ",H402}');
   S.Sheet.SetName('MAN3', NormRange(r + 6, 21, r + 6, 21));
   S.Sheet.SetName('\E', NormRange(r + 6, 21, r + 6, 21));
   S.Sheet.Put(r + 8, 21, '''{MENUBRANCH U' + IntToStr(r + 20) + '}');

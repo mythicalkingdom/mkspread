@@ -843,7 +843,11 @@ begin
   end;
   case FWait of
     wQuestion:
-      if k = kEnter then FWait := wNone;           { the key itself is still processed }
+      if k = kEnter then
+      begin
+        FWait := wNone;
+        Result := True;                            { the Enter only resumes the macro }
+      end;
     wGet:
       begin
         s := KeyMacroText(k);

@@ -20,7 +20,7 @@ would: `/rfc~A1.A5~` formats a range.
 `{PGDN}` `{BIGLEFT}` `{BIGRIGHT}` `{DEL}` `{BS}` `{ESC}` `{EDIT}` `{NAME}`
 `{ABS}` `{GOTO}` `{WINDOW}` `{QUERY}` `{TABLE}` `{CALC}` `{GRAPH}` `{HELP}`,
 with an optional count (`{DOWN 5}`).  `{{}` and `{}}` type braces, `{~}` a
-tilde.  `{?}` pauses until the user presses Enter.
+tilde.  `{?}` pauses until the user presses Enter; that Enter only resumes the macro (it is not typed), so text typed meanwhile continues with the macro's next keys.
 
 ## Commands
 | Command | Meaning |

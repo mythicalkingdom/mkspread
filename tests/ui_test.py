@@ -268,7 +268,7 @@ s.send('\x1ba')                                  # Alt-A runs \A
 check(s.line(6).startswith('2   hi'), 'macro typed into the worksheet', s.line(6))
 check('CMD' in s.line(25), 'CMD indicator while a macro waits', s.line(25))
 s.send('ab\r')
-check(s.line(7).rstrip().endswith('there') or 'there' in s.line(8), 'macro continued after the user pressed Enter', s.line(7) + s.line(8))
+check('abthere' in s.line(7) + s.line(8), 'macro continued after the user pressed Enter (Enter not stored)', s.line(7) + s.line(8))
 check('CMD' not in s.line(25), 'CMD indicator gone when the macro ends', s.line(25))
 s.send('/qy', 0.4)
 s.close()
